@@ -72,3 +72,44 @@ export async function downloadFile(itemId) {
   if (!res.ok) throw new GraphError(res.status, '');
   return res.blob();
 }
+
+// ---------- 파일·폴더 변경 (3단계) ----------
+// 같은 이름이 있으면 덮어쓰지 않고 실패(409)하게 한다.
+const FAIL_ON_CONFLICT = '@microsoft.graph.conflictBehavior=fail';
+const itemPath = (id) => `/me/drive/items/${encodeURIComponent(id)}`;
+
+export const isNameConflict = (e) => e?.status === 409;
+
+// 이동(과 함께 이름 변경)
+export function moveItem(itemId, parentId, newName) {
+  return graphJson(`${itemPath(itemId)}?${FAIL_ON_CONFLICT}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parentReference: { id: parentId }, ...(newName ? { name: newName } : {}) }),
+  });
+}
+
+export function renameItem(itemId, newName) {
+  return graphJson(`${itemPath(itemId)}?${FAIL_ON_CONFLICT}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: newName }),
+  });
+}
+
+export function createFolder(parentId, name) {
+  return graphJson(`${itemPath(parentId)}/children`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, folder: {}, '@microsoft.graph.conflictBehavior': 'fail' }),
+  });
+}
+
+// OneDrive 휴지통으로 보낸다 (영구 삭제 아님)
+export function deleteItem(itemId) {
+  return graphFetch(itemPath(itemId), { method: 'DELETE' });
+}
+
+export function getFolderInfo(folderId) {
+  return graphJson(`${itemPath(folderId)}?$select=id,name,folder`);
+}

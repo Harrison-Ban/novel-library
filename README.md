@@ -28,6 +28,7 @@ python3 -m http.server 8080
 | `js/state.js` | 화면 상태, 알림, 대화상자 |
 | `js/board.js` | 보드(칸·카드), 드래그, 선택 모드, 필터·검색·정렬 |
 | `js/manage.js` | 분류 관리 화면 |
+| `js/fileops.js` | 파일 이동·이름 변경·휴지통, 폴더 생성·이름 변경·삭제, 이름 충돌 처리, 작업 기록 |
 | `js/app.js` | 시작·로그인·루트 폴더 지정·설정, 동기화 표시 |
 | `vendor/msal-browser.min.js` | @azure/msal-browser 3.30.0 (MIT) |
 | `vendor/sortable.min.js` | SortableJS 1.15.6 (MIT) |

@@ -197,6 +197,7 @@ async function renderSettings() {
       h('p', {}, state.root ? state.root.path : '지정되지 않음'),
       h('div', { class: 'row' },
         h('button', { onclick: () => renderPicker() }, '루트 폴더 바꾸기'),
+        h('button', { onclick: renderLog }, '작업 기록'),
         h('button', { class: 'danger', onclick: () => flush().finally(logout) }, '로그아웃'),
       ),
     ),
@@ -211,6 +212,32 @@ async function renderSettings() {
   } catch {
     versionEl.textContent = '버전 정보를 불러오지 못했습니다';
   }
+}
+
+// ---------- 작업 기록 ----------
+
+const ACTION_LABELS = { move: '이동', rename: '이름 변경', delete: '휴지통', mkdir: '폴더 생성', rmdir: '폴더 삭제' };
+
+function renderLog() {
+  state.view = 'log';
+  const log = getLibrary().log ?? [];
+  render(
+    h('section', { class: 'panel' },
+      h('h2', {}, '작업 기록'),
+      h('p', { class: 'muted small' }, '최근 파일·폴더 변경 300개까지 보관합니다. 휴지통으로 보낸 항목은 OneDrive 휴지통에서 복원할 수 있습니다.'),
+      log.length
+        ? h('ul', { class: 'log-list' },
+            ...log.map((e) =>
+              h('li', {},
+                h('div', {}, h('span', { class: `log-action ${e.action}` }, ACTION_LABELS[e.action] ?? e.action), ' ', e.name),
+                h('div', { class: 'muted small' }, `${formatDateTime(e.at)} · ${e.detail ?? ''}`),
+              ),
+            ),
+          )
+        : h('p', { class: 'muted' }, '아직 기록이 없습니다.'),
+      h('div', { class: 'row' }, h('button', { onclick: renderSettings }, '설정으로')),
+    ),
+  );
 }
 
 // ---------- 상단 버튼 ----------

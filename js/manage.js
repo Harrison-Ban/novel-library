@@ -3,6 +3,7 @@ import { state, render } from './state.js';
 import { getLibrary, update } from './library.js';
 import { ops, sortedGroups, groupItems, newId, PALETTE } from './model.js';
 import { h } from './ui.js';
+import { addFolder, renameFolder, removeFolder } from './fileops.js';
 
 function move(list, index, dir) {
   const next = [...list];
@@ -76,7 +77,7 @@ function groupPanel(lib, g, gi, groups) {
         }, '삭제'),
     ),
     isFolder &&
-      h('p', { class: 'muted small' }, '소설 루트 폴더 바로 아래의 하위 폴더가 항목입니다. 여기서는 색상과 순서만 바꿀 수 있고, 폴더 추가·이름 변경·삭제는 3단계에서 추가됩니다.'),
+      h('p', { class: 'muted small' }, '소설 루트 폴더 바로 아래의 하위 폴더가 항목입니다. 항목 추가·이름 변경·삭제는 OneDrive 폴더에 그대로 적용됩니다 (삭제는 빈 폴더만, 휴지통으로).'),
     h('ul', { class: 'manage-items' },
       ...items.map((item, i) =>
         h('li', { class: 'manage-row' },
@@ -91,7 +92,15 @@ function groupPanel(lib, g, gi, groups) {
             },
           }),
           isFolder
-            ? h('span', { class: 'grow' }, item.name)
+            ? h('input', {
+                class: 'grow name-input',
+                value: item.name,
+                'aria-label': '폴더 이름',
+                onchange: async (e) => {
+                  if (!(await renameFolder(item, e.target.value))) e.target.value = item.name;
+                  renderManage();
+                },
+              })
             : h('input', {
                 class: 'grow name-input',
                 value: item.name,
@@ -104,6 +113,14 @@ function groupPanel(lib, g, gi, groups) {
               }),
           h('button', { type: 'button', title: '위로', disabled: i === 0, onclick: () => apply(ops.setItemsLayout(g.id, layout(move(items, i, -1)))) }, '↑'),
           h('button', { type: 'button', title: '아래로', disabled: i === items.length - 1, onclick: () => apply(ops.setItemsLayout(g.id, layout(move(items, i, 1)))) }, '↓'),
+          isFolder &&
+            h('button', {
+              type: 'button',
+              class: 'danger',
+              onclick: async () => {
+                if (await removeFolder(item)) renderManage();
+              },
+            }, '삭제'),
           !isFolder &&
             h('button', {
               type: 'button',
@@ -120,6 +137,14 @@ function groupPanel(lib, g, gi, groups) {
       !items.length &&
         h('li', { class: 'muted small' }, isFolder ? (state.scan ? '하위 폴더가 없습니다.' : '파일 목록을 먼저 불러와 주세요.') : '항목이 없습니다.'),
     ),
+    isFolder &&
+      h('button', {
+        type: 'button',
+        disabled: !state.scan,
+        onclick: async () => {
+          if (await addFolder()) renderManage();
+        },
+      }, '+ 폴더 추가'),
     !isFolder &&
       h('button', {
         type: 'button',

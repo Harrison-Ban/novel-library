@@ -304,3 +304,29 @@ input[type=color] { width: 36px; height: 32px; padding: 2px; flex: none; }
   .selection-bar > button { flex: 1; padding: 8px 4px; white-space: nowrap; font-size: 14px; }
   .board { padding-bottom: 130px; }
 }
+
+/* ---------- 3단계: 파일 관리 ---------- */
+#progress {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+#progress[hidden] { display: none; }
+.column-action { padding: 8px 8px 0; }
+.column-action button { width: 100%; }
+button.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
+.confirm-list { list-style: none; padding: 0; margin: 8px 0; font-size: 14px; max-height: 40vh; overflow-y: auto; }
+.confirm-list li { padding: 4px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.picker-body .folder-list { max-height: 45vh; overflow-y: auto; }
+.log-list { list-style: none; padding: 0; margin: 12px 0; }
+.log-list li { padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.log-action { font-size: 12px; padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); }
+.log-action.delete, .log-action.rmdir { color: var(--danger); }

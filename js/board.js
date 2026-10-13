@@ -3,6 +3,7 @@ import { state, render, toast, errorMessage, sheet, writePref } from './state.js
 import { getLibrary, update } from './library.js';
 import { scanRoot, loadCache } from './scan.js';
 import { downloadFile } from './graph.js';
+import { moveItems, renameFile, trashFiles, pickFolder } from './fileops.js';
 import { ops, sortedGroups, findGroup, groupItems, fileTags, fileKeysInGroup, NONE } from './model.js';
 import { h, formatSize, formatDate, formatDateTime } from './ui.js';
 
@@ -140,7 +141,7 @@ export function renderBoard() {
     ),
     state.showFilters && filterPanel(lib, group),
     group?.type === 'folder' &&
-      h('p', { class: 'muted small note' }, '폴더 연결 그룹입니다. 칸을 옮기면 실제 파일이 이동하는 기능은 3단계에서 추가됩니다.'),
+      h('p', { class: 'muted small note' }, '폴더 연결 그룹: 칸을 옮기면 OneDrive에서 실제 파일이 그 폴더로 이동합니다 (확인 후 실행).'),
     h('p', { class: 'summary', id: 'summary' }),
     h('div', { class: 'board', id: 'board' }),
     h('div', { id: 'selection-bar' }),
@@ -239,6 +240,10 @@ export function renderColumns() {
           h('span', { class: 'grow' }, col.name),
           h('span', { class: 'muted small' }, `${colFiles.length}개 · ${formatSize(colFiles.reduce((s, f) => s + f.size, 0))}`),
         ),
+        (col.key === TRASH_ITEM || col.name === '삭제예정') && group.type === 'virtual' && colFiles.length > 0 && !collapsed &&
+          h('div', { class: 'column-action' },
+            h('button', { type: 'button', class: 'danger', onclick: () => trashAndRefresh(colFiles, '삭제예정 파일 휴지통으로') }, `${colFiles.length}개 휴지통으로`),
+          ),
         h('ul', { class: 'cards', 'data-col': col.key },
           ...colFiles.map((f) => card(lib, group, f, badges)),
         ),
@@ -246,16 +251,22 @@ export function renderColumns() {
     }),
   );
 
-  if (group.type === 'virtual' && canDrag() && !state.selectMode && window.Sortable) {
+  if (canDrag() && !state.selectMode && window.Sortable) {
     for (const list of board.querySelectorAll('.cards')) {
       window.Sortable.create(list, {
         group: 'board',
         sort: false,
         animation: 150,
-        onEnd: (evt) => {
+        onEnd: async (evt) => {
           if (evt.from === evt.to) return;
           const fileId = evt.item.dataset.id;
-          update(ops.moveInGroup([fileId], group.id, evt.from.dataset.col, evt.to.dataset.col));
+          if (group.type === 'folder') {
+            // 폴더 연결: 실제 파일 이동 (확인 후)
+            const file = state.scan.files.find((f) => f.id === fileId);
+            if (file) await moveItems([file], folderTarget(evt.to.dataset.col));
+          } else {
+            update(ops.moveInGroup([fileId], group.id, evt.from.dataset.col, evt.to.dataset.col));
+          }
           renderColumns();
         },
       });
@@ -341,6 +352,7 @@ function toggleSelected(id) {
 
 function renderSelectionBar() {
   const bar = document.getElementById('selection-bar');
+  const selectedFiles = () => state.scan?.files.filter((f) => state.selected.has(f.id)) ?? [];
   if (!bar) return;
   if (!state.selectMode) {
     bar.replaceChildren();
@@ -354,16 +366,27 @@ function renderSelectionBar() {
   bar.className = 'selection-bar';
   bar.replaceChildren(
     h('span', { class: 'grow' }, `${ids.length}개 선택 · ${formatSize(size)}`),
-    group?.type === 'virtual' &&
-      h('button', { type: 'button', disabled: !ids.length, onclick: () => moveDialog(ids) }, '칸 이동'),
+    h('button', { type: 'button', disabled: !ids.length, onclick: () => moveDialog(ids) }, '칸 이동'),
     h('button', { type: 'button', disabled: !ids.length, onclick: () => tagDialog(ids) }, '분류 지정'),
     h('button', {
       type: 'button',
-      onclick: () => {
-        for (const f of visibleFiles(getLibrary())) state.selected.add(f.id);
-        renderColumns();
+      onclick: async () => {
+        const choice = await sheet(`${ids.length}개 선택`, null, [
+          { label: '보이는 파일 모두 선택', value: () => 'all' },
+          ...(ids.length ? [
+            { label: '다른 폴더로 이동', value: () => 'folder' },
+            { label: '휴지통으로 삭제', class: 'danger', value: () => 'trash' },
+          ] : []),
+          { label: '닫기' },
+        ]);
+        if (choice === 'all') {
+          for (const f of visibleFiles(getLibrary())) state.selected.add(f.id);
+          renderColumns();
+        }
+        if (choice === 'folder') moveToPickedFolder(selectedFiles());
+        if (choice === 'trash') trashAndRefresh(selectedFiles());
       },
-    }, '모두'),
+    }, '더보기'),
     h('button', { type: 'button', onclick: () => setSelectMode(false) }, '취소'),
   );
 }
@@ -381,17 +404,22 @@ function afterBulkChange() {
 // ---------- 카드 메뉴와 대화상자 ----------
 
 async function cardMenu(f) {
-  const group = currentGroup(getLibrary());
   const choice = await sheet(f.name, h('p', { class: 'muted small' }, `${formatSize(f.size)} · ${formatDate(f.modified)}`), [
     { label: '열기 (기본 앱)', value: () => 'open' },
     { label: '분류 지정', value: () => 'tag' },
-    ...(group?.type === 'virtual' ? [{ label: '칸으로 이동', value: () => 'move' }] : []),
+    { label: '칸으로 이동', value: () => 'move' },
+    { label: '다른 폴더로 이동', value: () => 'folder' },
+    { label: '이름 변경', value: () => 'rename' },
     { label: '선택', value: () => 'select' },
+    { label: '휴지통으로 삭제', class: 'danger', value: () => 'trash' },
     { label: '닫기' },
   ]);
   if (choice === 'open') openFile(f);
   if (choice === 'tag') tagDialog([f.id]);
   if (choice === 'move') moveDialog([f.id]);
+  if (choice === 'folder') moveToPickedFolder([f]);
+  if (choice === 'rename' && (await renameFile(f))) renderColumns();
+  if (choice === 'trash') trashAndRefresh([f]);
   if (choice === 'select') {
     state.selectMode = true;
     state.selected.add(f.id);
@@ -402,15 +430,42 @@ async function cardMenu(f) {
 async function moveDialog(ids) {
   const lib = getLibrary();
   const group = currentGroup(lib);
-  if (group?.type !== 'virtual') return;
-  const columns = [...groupItems(group, state.scan), { key: NONE, name: '미분류', color: null }];
-  const target = await sheet(`${group.name}: ${ids.length}개를 어느 칸으로?`, null, [
+  if (!group) return;
+  const columns = [...groupItems(group, state.scan), { key: NONE, name: group.type === 'folder' ? '미분류 (루트)' : '미분류', color: null }];
+  const target = await sheet(`${group.name}: ${ids.length}개를 어느 칸으로?`,
+    group.type === 'folder' && h('p', { class: 'muted small' }, '폴더 연결 그룹이라 OneDrive에서 실제 파일이 이동합니다.'), [
     ...columns.map((c) => ({ label: c.name, value: () => c.key })),
     { label: '취소' },
   ]);
   if (!target) return;
-  update(ops.moveInGroup(ids, group.id, null, target));
+  if (group.type === 'folder') {
+    const files = state.scan.files.filter((f) => ids.includes(f.id));
+    await moveItems(files, folderTarget(target));
+  } else {
+    update(ops.moveInGroup(ids, group.id, null, target));
+  }
   afterBulkChange();
+}
+
+const TRASH_ITEM = 'i-del'; // 상태 그룹의 '삭제예정'
+
+// 장르(폴더 연결) 칸 키 → 실제 OneDrive 폴더
+function folderTarget(key) {
+  if (key === NONE) return { id: state.root.id, name: `${state.root.name} (루트)` };
+  const folder = state.scan.folders.find((f) => f.id === key);
+  return { id: key, name: folder?.name ?? '폴더' };
+}
+
+async function moveToPickedFolder(files) {
+  const target = await pickFolder(`${files.length}개를 옮길 폴더`);
+  if (!target) return;
+  await moveItems(files, target);
+  afterBulkChange();
+}
+
+async function trashAndRefresh(files, title) {
+  const n = await trashFiles(files, title);
+  if (n) afterBulkChange();
 }
 
 // 앱 내 그룹 항목을 체크박스로 붙이고 뗀다. 일부 파일에만 붙은 항목은 '-' 상태로 두면 그대로 유지된다.

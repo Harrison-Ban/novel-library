@@ -57,7 +57,7 @@ export function loadCache(rootId) {
   }
 }
 
-function saveCache(result) {
+export function saveCache(result) {
   try {
     localStorage.setItem(CACHE_KEY, JSON.stringify(result));
   } catch {

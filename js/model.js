@@ -180,6 +180,11 @@ export const ops = {
     }
   },
 
+  // 작업 기록 (최근 것이 앞, 300개까지)
+  log: (entries) => (d) => {
+    d.log = [...entries, ...(d.log ?? [])].slice(0, 300);
+  },
+
   // OneDrive에서 사라진 파일의 분류 정보 정리
   forgetFiles: (fileIds) => (d) => {
     for (const id of fileIds) delete d.files[id];
