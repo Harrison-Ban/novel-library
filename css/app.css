@@ -148,7 +148,7 @@ code.block {
   border-radius: 8px;
   background: var(--text);
   color: var(--bg);
-  z-index: 20;
+  z-index: 50;
 }
 #toast[hidden] { display: none; }
 
@@ -311,7 +311,7 @@ input[type=color] { width: 36px; height: 32px; padding: 2px; flex: none; }
   top: calc(env(safe-area-inset-top) + 64px);
   left: 50%;
   transform: translateX(-50%);
-  z-index: 30;
+  z-index: 50;
   padding: 8px 16px;
   border-radius: 999px;
   background: var(--accent);
@@ -330,3 +330,59 @@ button.danger-fill { background: var(--danger); border-color: var(--danger); col
 .log-list li { padding: 8px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .log-action { font-size: 12px; padding: 1px 7px; border-radius: 999px; background: var(--bg); border: 1px solid var(--border); }
 .log-action.delete, .log-action.rmdir { color: var(--danger); }
+
+/* ---------- 4단계: 리더 ---------- */
+.card-more { border: 0; background: none; padding: 0 4px; margin-left: auto; font-size: 18px; line-height: 1; color: var(--muted); }
+body.reading { overflow: hidden; }
+.reader {
+  --r-bg: var(--bg);
+  --r-text: var(--text);
+  --r-muted: var(--muted);
+  --r-bar: var(--surface);
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--r-bg);
+  color: var(--r-text);
+}
+.reader[data-theme="light"] { --r-bg: #ffffff; --r-text: #1f2328; --r-muted: #6b7078; --r-bar: #f6f5f2; }
+.reader[data-theme="sepia"] { --r-bg: #f4ecd8; --r-text: #4a3b28; --r-muted: #8a7a62; --r-bar: #ebe0c6; }
+.reader[data-theme="dark"] { --r-bg: #121212; --r-text: #d6d6d6; --r-muted: #8a8f96; --r-bar: #1c1c1c; }
+.reader-bar, .reader-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--r-bar);
+  color: var(--r-text);
+  flex: none;
+}
+.reader-bar { padding-top: calc(env(safe-area-inset-top) + 6px); }
+.reader-foot { padding-bottom: calc(env(safe-area-inset-bottom) + 6px); font-size: 12px; color: var(--r-muted); }
+.reader.bars-hidden .reader-bar, .reader.bars-hidden .reader-foot { display: none; }
+.reader-btn { background: none; border: 0; color: inherit; padding: 6px 8px; font-size: 15px; }
+.reader-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.reader-status { flex: 1; text-align: center; }
+.reader-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.reader-tags .badge { color: var(--r-text); }
+.reader-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.reader-text {
+  font-size: var(--r-fs);
+  line-height: var(--r-lh);
+  padding: 16px var(--r-margin) 40vh;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+  max-width: 46em;
+  margin: 0 auto;
+}
+.reader-block { content-visibility: auto; contain-intrinsic-size: auto 2000px; }
+.reader[data-mode="page"] .reader-scroll { overflow: hidden; }
+.reader[data-mode="page"] .reader-text { max-width: none; margin: 0; padding: 16px var(--r-margin); box-sizing: border-box; }
+.reader[data-mode="page"] .reader-block { content-visibility: visible; }
+.reader-settings .setting-row { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.stepper-value { min-width: 4em; text-align: center; }
+.segmented { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.segmented button { padding: 5px 9px; }

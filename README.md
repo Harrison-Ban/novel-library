@@ -29,6 +29,11 @@ python3 -m http.server 8080
 | `js/board.js` | 보드(칸·카드), 드래그, 선택 모드, 필터·검색·정렬 |
 | `js/manage.js` | 분류 관리 화면 |
 | `js/fileops.js` | 파일 이동·이름 변경·휴지통, 폴더 생성·이름 변경·삭제, 이름 충돌 처리, 작업 기록 |
+| `js/reader.js` | txt 리더: 나눠 불러오기, 보기 설정, 스크롤·페이지 모드, 읽던 위치 |
+| `js/encoding.js` | UTF-8·EUC-KR(CP949)·UTF-16 자동 판별 |
+| `js/convert.js` | doc·docx → UTF-8 txt 변환 |
 | `js/app.js` | 시작·로그인·루트 폴더 지정·설정, 동기화 표시 |
 | `vendor/msal-browser.min.js` | @azure/msal-browser 3.30.0 (MIT) |
 | `vendor/sortable.min.js` | SortableJS 1.15.6 (MIT) |
+| `vendor/mammoth.browser.min.js` | mammoth 1.8.0 (BSD-2-Clause), docx 텍스트 추출 |
+| `vendor/pdfjs/` | pdf.js 4.10.38 legacy build (Apache-2.0), doc→PDF 텍스트 추출 |

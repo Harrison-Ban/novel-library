@@ -63,14 +63,24 @@ export function getItem(itemId) {
   return graphJson(`/me/drive/items/${encodeURIComponent(itemId)}?$select=id,name,folder,parentReference`);
 }
 
-// 파일을 기기로 받는다. 받은 내용은 이 기기와 OneDrive 사이에서만 오간다.
-export async function downloadFile(itemId) {
+// 파일 내용을 받는다. 받은 내용은 이 기기와 OneDrive 사이에서만 오간다.
+export async function openDownload(itemId) {
   const meta = await graphJson(`/me/drive/items/${encodeURIComponent(itemId)}`);
   const url = meta['@microsoft.graph.downloadUrl'];
   if (!url) throw new Error('다운로드 주소를 받지 못했습니다');
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new GraphError(res.status, '');
-  return res.blob();
+  return res;
+}
+
+export async function downloadFile(itemId) {
+  return (await openDownload(itemId)).blob();
+}
+
+// 구형 doc을 OneDrive에서 PDF로 변환해 받는다
+export async function downloadAsPdf(itemId) {
+  const res = await graphFetch(`/me/drive/items/${encodeURIComponent(itemId)}/content?format=pdf`);
+  return res.arrayBuffer();
 }
 
 // ---------- 파일·폴더 변경 (3단계) ----------
@@ -112,4 +122,13 @@ export function deleteItem(itemId) {
 
 export function getFolderInfo(folderId) {
   return graphJson(`${itemPath(folderId)}?$select=id,name,folder`);
+}
+
+// 새 txt 파일 올리기. 같은 이름이 있으면 실패(409)한다.
+export function uploadText(parentId, name, blob) {
+  return graphJson(`${itemPath(parentId)}:/${encodeURIComponent(name)}:/content?${FAIL_ON_CONFLICT}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    body: blob,
+  });
 }

@@ -180,6 +180,11 @@ export const ops = {
     }
   },
 
+  // 읽던 위치 (0~1)
+  setPos: (fileId, pos) => (d) => {
+    d.files[fileId] = { ...(d.files[fileId] ?? {}), lastPos: pos };
+  },
+
   // 작업 기록 (최근 것이 앞, 300개까지)
   log: (entries) => (d) => {
     d.log = [...entries, ...(d.log ?? [])].slice(0, 300);

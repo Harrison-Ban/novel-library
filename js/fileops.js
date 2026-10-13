@@ -15,11 +15,11 @@ export function showProgress(text) {
   el.hidden = !text;
 }
 
-function logEntries(entries) {
+export function logEntries(entries) {
   if (entries.length) update(ops.log(entries.map((e) => ({ at: new Date().toISOString(), ...e }))));
 }
 
-function commitScan() {
+export function commitScan() {
   if (state.scan) saveCache(state.scan);
 }
 
@@ -51,7 +51,7 @@ export function folderNameOf(folderId) {
 const parentOf = (f) => f.folderId ?? state.root.id;
 
 // 같은 이름이 있을 때 어떻게 할지 묻는다. 결과: { choice: 'number' | 'skip', all }
-async function askConflict(name, remaining) {
+export async function askConflict(name, remaining) {
   const all = h('input', { type: 'checkbox' });
   const body = h('div', {},
     h('p', {}, `'${name}'과(와) 같은 이름의 항목이 이미 있습니다. 덮어쓰지 않습니다.`),

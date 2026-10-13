@@ -4,6 +4,8 @@ import { getLibrary, update } from './library.js';
 import { scanRoot, loadCache } from './scan.js';
 import { downloadFile } from './graph.js';
 import { moveItems, renameFile, trashFiles, pickFolder } from './fileops.js';
+import { openReader, isReadable } from './reader.js';
+import { convertFiles, isConvertible } from './convert.js';
 import { ops, sortedGroups, findGroup, groupItems, fileTags, fileKeysInGroup, NONE } from './model.js';
 import { h, formatSize, formatDate, formatDateTime } from './ui.js';
 
@@ -287,6 +289,7 @@ function card(lib, group, f, badges) {
     onclick: (e) => {
       if (e.target.closest('button') || Date.now() < suppressClickUntil) return;
       if (state.selectMode) toggleSelected(f.id);
+      else if (isReadable(f)) read(f);
       else cardMenu(f);
     },
   },
@@ -295,6 +298,7 @@ function card(lib, group, f, badges) {
       h('span', {}, formatSize(f.size)),
       h('span', {}, formatDate(f.modified)),
       h('button', { type: 'button', class: 'link', onclick: (e) => openFile(f, e.currentTarget) }, '열기'),
+      h('button', { type: 'button', class: 'card-more', 'aria-label': '메뉴', onclick: () => cardMenu(f) }, '⋯'),
     ),
     otherBadges.length > 0 &&
       h('div', { class: 'badges' },
@@ -374,6 +378,7 @@ function renderSelectionBar() {
         const choice = await sheet(`${ids.length}개 선택`, null, [
           { label: '보이는 파일 모두 선택', value: () => 'all' },
           ...(ids.length ? [
+            ...(selectedFiles().some(isConvertible) ? [{ label: 'doc·docx를 txt로 변환', value: () => 'convert' }] : []),
             { label: '다른 폴더로 이동', value: () => 'folder' },
             { label: '휴지통으로 삭제', class: 'danger', value: () => 'trash' },
           ] : []),
@@ -385,6 +390,7 @@ function renderSelectionBar() {
         }
         if (choice === 'folder') moveToPickedFolder(selectedFiles());
         if (choice === 'trash') trashAndRefresh(selectedFiles());
+        if (choice === 'convert' && (await convertFiles(selectedFiles()))) afterBulkChange();
       },
     }, '더보기'),
     h('button', { type: 'button', onclick: () => setSelectMode(false) }, '취소'),
@@ -405,6 +411,8 @@ function afterBulkChange() {
 
 async function cardMenu(f) {
   const choice = await sheet(f.name, h('p', { class: 'muted small' }, `${formatSize(f.size)} · ${formatDate(f.modified)}`), [
+    ...(isReadable(f) ? [{ label: '리더로 읽기', class: 'primary', value: () => 'read' }] : []),
+    ...(isConvertible(f) ? [{ label: 'txt로 변환', class: 'primary', value: () => 'convert' }] : []),
     { label: '열기 (기본 앱)', value: () => 'open' },
     { label: '분류 지정', value: () => 'tag' },
     { label: '칸으로 이동', value: () => 'move' },
@@ -414,6 +422,8 @@ async function cardMenu(f) {
     { label: '휴지통으로 삭제', class: 'danger', value: () => 'trash' },
     { label: '닫기' },
   ]);
+  if (choice === 'read') read(f);
+  if (choice === 'convert' && (await convertFiles([f]))) renderColumns();
   if (choice === 'open') openFile(f);
   if (choice === 'tag') tagDialog([f.id]);
   if (choice === 'move') moveDialog([f.id]);
@@ -469,7 +479,16 @@ async function trashAndRefresh(files, title) {
 }
 
 // 앱 내 그룹 항목을 체크박스로 붙이고 뗀다. 일부 파일에만 붙은 항목은 '-' 상태로 두면 그대로 유지된다.
-async function tagDialog(ids) {
+function read(f) {
+  openReader(f, {
+    onTag: (id, done) => tagDialog([id], done),
+    onClose: () => {
+      if (state.view === 'board') renderColumns();
+    },
+  });
+}
+
+export async function tagDialog(ids, after) {
   const lib = getLibrary();
   const groups = sortedGroups(lib).filter((g) => g.type === 'virtual');
   const boxes = [];
@@ -503,7 +522,8 @@ async function tagDialog(ids) {
   }
   if (!add.length && !remove.length) return;
   update(ops.tag(ids, add, remove));
-  afterBulkChange();
+  if (after) after();
+  else afterBulkChange();
 }
 
 // 웹앱은 기기의 앱을 직접 실행할 수 없으므로, 파일을 내려받아 기기의 기본 앱으로 열게 한다
