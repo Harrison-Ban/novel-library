@@ -22,7 +22,12 @@ python3 -m http.server 8080
 | `js/config.js` | Azure 클라이언트 ID, 권한 |
 | `js/auth.js` | 로그인·토큰 갱신 (MSAL) |
 | `js/graph.js` | Microsoft Graph 호출, 429 재시도 |
-| `js/library.js` | OneDrive 앱 폴더의 `library.json` 읽기·저장 (eTag 비교) |
+| `js/library.js` | OneDrive 앱 폴더의 `library.json` 읽기·저장, 모아서 저장, eTag 충돌 시 다시 불러와 합치기 |
+| `js/model.js` | 분류 그룹·항목·파일 태그와 변경 op |
 | `js/scan.js` | 루트·하위 폴더의 txt·doc·docx 목록, 기기 캐시 |
-| `js/app.js` | 화면 흐름 |
+| `js/state.js` | 화면 상태, 알림, 대화상자 |
+| `js/board.js` | 보드(칸·카드), 드래그, 선택 모드, 필터·검색·정렬 |
+| `js/manage.js` | 분류 관리 화면 |
+| `js/app.js` | 시작·로그인·루트 폴더 지정·설정, 동기화 표시 |
 | `vendor/msal-browser.min.js` | @azure/msal-browser 3.30.0 (MIT) |
+| `vendor/sortable.min.js` | SortableJS 1.15.6 (MIT) |

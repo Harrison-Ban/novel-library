@@ -1,54 +1,16 @@
 import { CONFIG } from './config.js';
 import { initAuth, getAccount, login, logout, redirectUri } from './auth.js';
-import { listChildren, getItem, downloadFile, onThrottle } from './graph.js';
-import { loadLibrary, getLibrary, saveLibrary } from './library.js';
-import { scanRoot, loadCache, clearCache, isDoc } from './scan.js';
-import { h, formatSize, formatDate, formatDateTime } from './ui.js';
+import { listChildren, getItem, onThrottle } from './graph.js';
+import { loadLibrary, getLibrary, update, commit, flush, checkRemote, onLibraryChange, getSyncStatus } from './library.js';
+import { clearCache, isDoc } from './scan.js';
+import { ops } from './model.js';
+import { state, render, toast, renderError, isDialogOpen } from './state.js';
+import { showBoard, renderBoard, refreshScan } from './board.js';
+import { renderManage } from './manage.js';
+import { h, formatDateTime } from './ui.js';
 
-const app = document.getElementById('app');
 const nav = document.getElementById('nav');
-
-const state = {
-  root: null, // { id, name, path }
-  scan: null,
-  scanning: false,
-  progress: null,
-  sort: 'name',
-  query: '',
-  collapsed: new Set(), // 접어 둔 칸 (폴더 ID, 미분류는 'root')
-  view: 'list',
-};
-
-function render(...nodes) {
-  app.replaceChildren(...nodes);
-}
-
-let toastTimer;
-function toast(message) {
-  const el = document.getElementById('toast');
-  el.textContent = message;
-  el.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), 4000);
-}
-
-function errorMessage(e) {
-  if (e?.status === 401 || e?.status === 403) return '권한이 없습니다. 로그아웃 후 다시 로그인해 보세요.';
-  if (e?.status === 404) return '항목을 찾을 수 없습니다.';
-  if (e instanceof TypeError) return '네트워크에 연결할 수 없습니다.';
-  return e?.message || String(e);
-}
-
-function renderError(e, retry) {
-  console.error(e);
-  render(
-    h('section', { class: 'panel' },
-      h('h2', {}, '문제가 생겼습니다'),
-      h('p', {}, errorMessage(e)),
-      retry && h('button', { class: 'primary', onclick: retry }, '다시 시도'),
-    ),
-  );
-}
+const REMOTE_CHECK_MS = 60_000;
 
 // ---------- 시작 ----------
 
@@ -63,6 +25,7 @@ async function start() {
 
   nav.hidden = false;
   onThrottle((sec) => toast(`OneDrive 요청이 많아 ${sec}초 기다렸다 다시 시도합니다…`));
+  startSync();
   await openLibrary();
 }
 
@@ -73,6 +36,7 @@ async function openLibrary() {
   } catch (e) {
     return renderError(e, openLibrary);
   }
+  if (!getLibrary().groups.length) update(ops.initDefaults());
   const rootId = getLibrary().rootFolderId;
   if (!rootId) return renderPicker();
   try {
@@ -85,7 +49,7 @@ async function openLibrary() {
     }
     return renderError(e, openLibrary);
   }
-  showList();
+  showBoard();
 }
 
 function rootPath(item) {
@@ -96,6 +60,41 @@ function rootPath(item) {
     parent = decodeURIComponent(parent);
   } catch {}
   return `${parent}/${item.name}`;
+}
+
+// ---------- 동기화 (F8) ----------
+
+function startSync() {
+  const syncEl = document.getElementById('sync');
+  const labels = { saved: '✓ 저장됨', pending: '저장 대기', saving: '저장 중…', error: '⚠ 저장 실패' };
+  syncEl.onclick = () => {
+    if (getSyncStatus().status === 'error') flush();
+  };
+  onLibraryChange((kind) => {
+    const { status, error } = getSyncStatus();
+    syncEl.textContent = labels[status];
+    syncEl.className = `sync ${status}`;
+    syncEl.title = status === 'error' ? `${error?.message ?? ''} — 눌러서 다시 시도` : '';
+    if (kind === 'data') rerenderCurrent();
+  });
+
+  // 다른 기기의 변경: 앱으로 돌아올 때와 열려 있는 동안 주기적으로 확인
+  const check = () => {
+    if (document.visibilityState !== 'visible' || !state.root) return;
+    checkRemote().catch((e) => console.warn('원격 확인 실패', e));
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flush();
+    else check();
+  });
+  window.addEventListener('online', () => flush());
+  setInterval(check, REMOTE_CHECK_MS);
+}
+
+function rerenderCurrent() {
+  if (isDialogOpen()) return;
+  if (state.view === 'board') renderBoard();
+  if (state.view === 'manage') renderManage();
 }
 
 // ---------- 설정 필요 / 로그인 ----------
@@ -163,7 +162,7 @@ async function renderPicker(stack = [{ id: 'root', name: '내 파일' }]) {
       h('p', { class: 'muted' }, `이 폴더에 바로 있는 txt·doc·docx 파일: ${docCount}개`),
       h('div', { class: 'row' },
         h('button', { class: 'primary', onclick: () => chooseRoot(current) }, `'${current.name}'을(를) 소설 루트로 지정`),
-        state.root && h('button', { onclick: showList }, '취소'),
+        state.root && h('button', { onclick: showBoard }, '취소'),
       ),
     ),
   );
@@ -173,174 +172,12 @@ async function chooseRoot(folder) {
   render(h('p', { class: 'muted center' }, '저장하는 중…'));
   try {
     const id = folder.id === 'root' ? (await getItem('root')).id : folder.id;
-    await saveLibrary((d) => {
-      d.rootFolderId = id;
-    });
+    await commit(ops.setRoot(id));
     clearCache();
     state.scan = null;
     await openLibrary();
   } catch (e) {
     renderError(e, () => renderPicker());
-  }
-}
-
-// ---------- F3: 파일 목록 ----------
-
-function showList() {
-  state.view = 'list';
-  if (!state.scan || state.scan.rootId !== state.root.id) state.scan = loadCache(state.root.id);
-  renderList();
-  refreshScan();
-}
-
-async function refreshScan() {
-  if (state.scanning) return;
-  state.scanning = true;
-  state.progress = null;
-  updateStatus();
-  try {
-    state.scan = await scanRoot(state.root.id, (done, total) => {
-      state.progress = { done, total };
-      updateStatus();
-    });
-  } catch (e) {
-    toast(`목록을 새로 불러오지 못했습니다: ${errorMessage(e)}`);
-  } finally {
-    state.scanning = false;
-    updateStatus();
-    renderSections();
-  }
-}
-
-const SORTERS = {
-  name: (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }),
-  size: (a, b) => b.size - a.size,
-  modified: (a, b) => b.modified.localeCompare(a.modified),
-};
-
-function updateStatus() {
-  const el = document.getElementById('scan-status');
-  if (!el) return;
-  el.textContent = state.scanning
-    ? state.progress
-      ? `폴더 확인 중 ${state.progress.done}/${state.progress.total}`
-      : '목록 확인 중…'
-    : state.scan
-      ? `마지막 확인 ${formatDateTime(state.scan.scannedAt)}`
-      : '';
-}
-
-function renderList() {
-  const toolbar = h('div', { class: 'toolbar' },
-    h('input', {
-      type: 'search',
-      placeholder: '파일명 검색',
-      value: state.query,
-      oninput: (e) => {
-        state.query = e.target.value;
-        renderSections();
-      },
-    }),
-    h('select', {
-      onchange: (e) => {
-        state.sort = e.target.value;
-        renderSections();
-      },
-    },
-      ...[['name', '이름순'], ['size', '용량순'], ['modified', '수정일순']].map(([v, label]) =>
-        h('option', { value: v, selected: state.sort === v }, label),
-      ),
-    ),
-  );
-
-  const header = h('div', { class: 'list-head' },
-    h('div', {},
-      h('div', { class: 'root-name' }, state.root.name),
-      h('div', { class: 'muted small' }, state.root.path),
-    ),
-    h('div', { class: 'muted small', id: 'scan-status' }),
-  );
-
-  const sections = h('div', { id: 'sections' });
-  render(header, toolbar, sections);
-  updateStatus();
-  renderSections();
-}
-
-function renderSections() {
-  const container = document.getElementById('sections');
-  const scan = state.scan;
-  if (!container) return;
-  if (!scan) {
-    container.replaceChildren(h('p', { class: 'muted center' }, '파일 목록을 불러오는 중…'));
-    return;
-  }
-  const q = state.query.trim().toLowerCase();
-  const files = (q ? scan.files.filter((f) => f.name.toLowerCase().includes(q)) : scan.files)
-    .slice()
-    .sort(SORTERS[state.sort]);
-
-  const total = files.reduce((s, f) => s + f.size, 0);
-  const groups = [{ id: null, name: '미분류 (루트)' }, ...scan.folders].map((folder) => ({
-    folder,
-    files: files.filter((f) => f.folderId === folder.id),
-  }));
-
-  container.replaceChildren(
-    h('p', { class: 'summary' }, `전체 ${files.length}개 · ${formatSize(total)}`),
-    ...groups
-      .filter((g) => g.folder.id !== null || g.files.length || !q)
-      .map(({ folder, files }) => {
-        const key = folder.id ?? 'root';
-        return h('details', {
-          class: 'section',
-          open: !state.collapsed.has(key),
-          ontoggle: (e) => (e.target.open ? state.collapsed.delete(key) : state.collapsed.add(key)),
-        },
-          h('summary', {},
-            h('span', { class: 'grow' }, folder.name),
-            h('span', { class: 'muted small' }, `${files.length}개 · ${formatSize(files.reduce((s, f) => s + f.size, 0))}`),
-          ),
-          files.length
-            ? h('ul', { class: 'files' }, ...files.map(fileRow))
-            : h('p', { class: 'muted small empty' }, '파일 없음'),
-        );
-      }),
-    scan.nestedFolderCount
-      ? h('p', { class: 'muted small' }, `하위 폴더 안에 있는 폴더 ${scan.nestedFolderCount}개는 표시하지 않습니다 (1단계 깊이만).`)
-      : null,
-  );
-}
-
-function fileRow(f) {
-  return h('li', { class: 'file' },
-    h('div', { class: 'file-name' }, f.name),
-    h('div', { class: 'file-meta muted small' },
-      h('span', {}, formatSize(f.size)),
-      h('span', {}, formatDate(f.modified)),
-      h('button', { class: 'link', onclick: (e) => openFile(f, e.currentTarget) }, '열기'),
-    ),
-  );
-}
-
-// 웹앱은 기기의 앱을 직접 실행할 수 없으므로, 파일을 내려받아 기기의 기본 앱으로 열게 한다
-async function openFile(f, button) {
-  button.disabled = true;
-  button.textContent = '받는 중…';
-  try {
-    const blob = await downloadFile(f.id);
-    const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: f.name, hidden: true });
-    document.body.append(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    toast(`'${f.name}'을(를) 받았습니다. 다운로드 알림에서 열면 기본 앱으로 열립니다.`);
-  } catch (e) {
-    toast(`파일을 열지 못했습니다: ${errorMessage(e)}`);
-  } finally {
-    button.disabled = false;
-    button.textContent = '열기';
   }
 }
 
@@ -360,7 +197,7 @@ async function renderSettings() {
       h('p', {}, state.root ? state.root.path : '지정되지 않음'),
       h('div', { class: 'row' },
         h('button', { onclick: () => renderPicker() }, '루트 폴더 바꾸기'),
-        h('button', { class: 'danger', onclick: () => logout() }, '로그아웃'),
+        h('button', { class: 'danger', onclick: () => flush().finally(logout) }, '로그아웃'),
       ),
     ),
     h('footer', { class: 'version' }, versionEl),
@@ -378,13 +215,20 @@ async function renderSettings() {
 
 // ---------- 상단 버튼 ----------
 
-document.getElementById('nav-list').onclick = () => {
+document.getElementById('nav-board').onclick = () => {
   if (!state.root) return openLibrary();
-  state.view = 'list';
-  if (state.scan) renderList();
-  else showList();
+  if (state.scan) {
+    state.view = 'board';
+    renderBoard();
+  } else showBoard();
 };
-document.getElementById('nav-refresh').onclick = () => (state.root ? showList() : openLibrary());
+document.getElementById('nav-manage').onclick = () => (state.root ? renderManage() : openLibrary());
+document.getElementById('nav-refresh').onclick = async () => {
+  if (!state.root) return openLibrary();
+  await checkRemote().catch(() => {});
+  if (state.view !== 'board') showBoard();
+  else refreshScan();
+};
 document.getElementById('nav-settings').onclick = renderSettings;
 
 start();
