@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { initAuth, getAccount, login, logout, redirectUri } from './auth.js';
-import { listChildren, getItem, onThrottle } from './graph.js';
+import { listChildren, getItem, downloadFile, onThrottle } from './graph.js';
 import { loadLibrary, getLibrary, saveLibrary } from './library.js';
 import { scanRoot, loadCache, clearCache, isDoc } from './scan.js';
 import { h, formatSize, formatDate, formatDateTime } from './ui.js';
@@ -318,9 +318,30 @@ function fileRow(f) {
     h('div', { class: 'file-meta muted small' },
       h('span', {}, formatSize(f.size)),
       h('span', {}, formatDate(f.modified)),
-      f.webUrl && h('a', { href: f.webUrl, target: '_blank', rel: 'noopener' }, 'OneDrive에서 열기'),
+      h('button', { class: 'link', onclick: (e) => openFile(f, e.currentTarget) }, '열기'),
     ),
   );
+}
+
+// 웹앱은 기기의 앱을 직접 실행할 수 없으므로, 파일을 내려받아 기기의 기본 앱으로 열게 한다
+async function openFile(f, button) {
+  button.disabled = true;
+  button.textContent = '받는 중…';
+  try {
+    const blob = await downloadFile(f.id);
+    const url = URL.createObjectURL(blob);
+    const a = h('a', { href: url, download: f.name, hidden: true });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    toast(`'${f.name}'을(를) 받았습니다. 다운로드 알림에서 열면 기본 앱으로 열립니다.`);
+  } catch (e) {
+    toast(`파일을 열지 못했습니다: ${errorMessage(e)}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = '열기';
+  }
 }
 
 // ---------- 설정 ----------

@@ -14,7 +14,6 @@ function toFile(item, folderId) {
     size: item.size ?? 0,
     modified: item.lastModifiedDateTime,
     folderId, // null = 루트 바로 아래(미분류)
-    webUrl: item.webUrl,
   };
 }
 

@@ -44,7 +44,7 @@ export async function graphJson(path, options) {
   return res.status === 204 ? null : res.json();
 }
 
-const CHILD_FIELDS = 'id,name,size,lastModifiedDateTime,file,folder,webUrl';
+const CHILD_FIELDS = 'id,name,size,lastModifiedDateTime,file,folder';
 
 // 폴더 안의 항목 전체. 목록이 길면 나눠서 받아온다.
 export async function listChildren(folderId) {
@@ -60,5 +60,15 @@ export async function listChildren(folderId) {
 }
 
 export function getItem(itemId) {
-  return graphJson(`/me/drive/items/${encodeURIComponent(itemId)}?$select=id,name,folder,parentReference,webUrl`);
+  return graphJson(`/me/drive/items/${encodeURIComponent(itemId)}?$select=id,name,folder,parentReference`);
+}
+
+// 파일을 기기로 받는다. 받은 내용은 이 기기와 OneDrive 사이에서만 오간다.
+export async function downloadFile(itemId) {
+  const meta = await graphJson(`/me/drive/items/${encodeURIComponent(itemId)}`);
+  const url = meta['@microsoft.graph.downloadUrl'];
+  if (!url) throw new Error('다운로드 주소를 받지 못했습니다');
+  const res = await fetch(url);
+  if (!res.ok) throw new GraphError(res.status, '');
+  return res.blob();
 }
