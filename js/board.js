@@ -297,7 +297,8 @@ function card(lib, group, f, badges) {
     h('div', { class: 'card-meta muted small' },
       h('span', {}, formatSize(f.size)),
       h('span', {}, formatDate(f.modified)),
-      h('button', { type: 'button', class: 'link', onclick: (e) => openFile(f, e.currentTarget) }, '열기'),
+      // txt는 앱 안의 리더로, doc·docx는 기기의 기본 앱으로 연다 (txt도 ⋯ 메뉴에서 기본 앱으로 열 수 있다)
+      h('button', { type: 'button', class: 'link', onclick: (e) => (isReadable(f) ? read(f) : openFile(f, e.currentTarget)) }, '열기'),
       h('button', { type: 'button', class: 'card-more', 'aria-label': '메뉴', onclick: () => cardMenu(f) }, '⋯'),
     ),
     otherBadges.length > 0 &&
