@@ -6,6 +6,7 @@ import { overwriteText, uploadText, listChildren, isNameConflict } from './graph
 import { getLibrary, update } from './library.js';
 import { ops, fileTags } from './model.js';
 import { state, toast, sheet, errorMessage } from './state.js';
+import { parentFolderOf } from './scan.js';
 import { showProgress, logEntries, commitScan, uniqueName, folderNameOf } from './fileops.js';
 import { h } from './ui.js';
 
@@ -246,7 +247,7 @@ export async function openEditor({ file, text, eTag, look, onSaved, onClose }) {
     try {
       const item = await overwriteText(file.id, encode(content), currentETag);
       currentETag = item.eTag ?? currentETag;
-      logEntries([{ action: 'edit', name: file.name, detail: `편집 내용 저장 (${folderNameOf(file.folderId ?? state.root.id)})` }]);
+      logEntries([{ action: 'edit', name: file.name, detail: `편집 내용 저장 (${folderNameOf(parentFolderOf(file, state.root.id))})` }]);
       afterSaved(content, item);
       toast('저장했습니다');
     } catch (e) {
@@ -264,7 +265,7 @@ export async function openEditor({ file, text, eTag, look, onSaved, onClose }) {
       '다른 기기나 OneDrive에서 이 파일이 바뀌어 덮어쓰지 않았습니다. 편집한 내용을 새 파일로 저장할까요?',
     ), [{ label: '새 파일로 저장', class: 'primary', value: () => true }, { label: '취소 (계속 편집)' }]);
     if (!choice) return;
-    const parentId = file.folderId ?? state.root.id;
+    const parentId = parentFolderOf(file, state.root.id);
     showProgress('새 파일로 저장 중…');
     try {
       const taken = new Set((await listChildren(parentId)).map((c) => c.name.toLocaleLowerCase()));
@@ -272,7 +273,7 @@ export async function openEditor({ file, text, eTag, look, onSaved, onClose }) {
       let name = `${base} (수정).txt`;
       if (taken.has(name.toLocaleLowerCase())) name = uniqueName(name, taken);
       const item = await uploadText(parentId, name, encode(content));
-      state.scan?.files.push({ id: item.id, name: item.name, size: item.size ?? 0, modified: item.lastModifiedDateTime ?? new Date().toISOString(), folderId: file.folderId });
+      state.scan?.files.push({ id: item.id, name: item.name, size: item.size ?? 0, modified: item.lastModifiedDateTime ?? new Date().toISOString(), folderId: file.folderId, parentId, path: file.path ?? '' });
       commitScan();
       const tags = fileTags(getLibrary(), file.id);
       if (tags.length) update(ops.tag([item.id], tags));

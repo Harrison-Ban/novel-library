@@ -2,7 +2,7 @@
 // 원칙: 확인 후 실행, 덮어쓰기 없음(같은 이름이면 (1) 붙이기 또는 건너뛰기), 삭제는 휴지통으로만.
 import { listChildren, moveItem, renameItem, createFolder, deleteItem, getFolderInfo, isNameConflict } from './graph.js';
 import { update } from './library.js';
-import { saveCache } from './scan.js';
+import { saveCache, parentFolderOf } from './scan.js';
 import { ops } from './model.js';
 import { state, toast, sheet, errorMessage } from './state.js';
 import { h, formatSize } from './ui.js';
@@ -36,19 +36,21 @@ export function uniqueName(name, taken) {
   }
 }
 
-// 폴더 ID → 보드의 칸 키 (루트=null, 1단계 하위 폴더=ID, 그 밖=undefined)
-function scanFolderKey(folderId) {
-  if (folderId === state.root.id) return null;
-  if (state.scan?.folders.some((f) => f.id === folderId)) return folderId;
-  return undefined;
+// 소설 폴더 안의 폴더 정보: { topId(칸 폴더), path } (루트면 칸 없음, 소설 폴더 밖이면 undefined)
+function folderInfo(folderId) {
+  if (folderId === state.root.id) return { topId: null, path: '' };
+  const top = state.scan?.folders.find((f) => f.id === folderId);
+  if (top) return { topId: top.id, path: top.name };
+  const deep = state.scan?.allFolders?.find((f) => f.id === folderId);
+  return deep ? { topId: deep.topId, path: deep.path } : undefined;
 }
 
 export function folderNameOf(folderId) {
   if (folderId === state.root.id) return `${state.root.name} (루트)`;
-  return state.scan?.folders.find((f) => f.id === folderId)?.name ?? '폴더';
+  return folderInfo(folderId)?.path ?? '폴더';
 }
 
-const parentOf = (f) => f.folderId ?? state.root.id;
+const parentOf = (f) => parentFolderOf(f, state.root.id);
 
 // 같은 이름이 있을 때 어떻게 할지 묻는다. 결과: { choice: 'number' | 'skip', all }
 export async function askConflict(name, remaining) {
@@ -105,7 +107,7 @@ export async function moveItems(items, target, { confirmFirst = true } = {}) {
   let skipped = 0;
   const failed = [];
   const log = [];
-  const targetKey = scanFolderKey(target.id);
+  const targetInfo = folderInfo(target.id);
   for (const [i, f] of moving.entries()) {
     showProgress(`이동 중 ${i + 1}/${moving.length}`);
     let name = f.name;
@@ -130,8 +132,8 @@ export async function moveItems(items, target, { confirmFirst = true } = {}) {
       log.push({ action: 'move', name, detail: `${f.fromName ?? folderNameOf(f.parentId ?? parentOf(f))} → ${target.name}` });
       const file = state.scan?.files.find((x) => x.id === f.id);
       if (file) {
-        if (targetKey === undefined) state.scan.files = state.scan.files.filter((x) => x.id !== f.id);
-        else Object.assign(file, { folderId: targetKey, name });
+        if (targetInfo === undefined) state.scan.files = state.scan.files.filter((x) => x.id !== f.id);
+        else Object.assign(file, { folderId: targetInfo.topId, parentId: target.id, path: targetInfo.path, name });
       }
     } catch (e) {
       failed.push({ name: f.name, error: isNameConflict(e) ? '같은 이름' : errorMessage(e) });

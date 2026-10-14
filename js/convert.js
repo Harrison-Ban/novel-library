@@ -4,6 +4,7 @@
 import { downloadFile, downloadAsPdf, uploadText, deleteItem, listChildren, isNameConflict } from './graph.js';
 import { getLibrary, update } from './library.js';
 import { ops, fileTags } from './model.js';
+import { parentFolderOf } from './scan.js';
 import { showProgress, askConflict, uniqueName, logEntries, commitScan, folderNameOf } from './fileops.js';
 import { state, toast, sheet, errorMessage } from './state.js';
 import { h, formatSize } from './ui.js';
@@ -90,7 +91,7 @@ export async function convertFiles(files) {
   const log = [];
   for (const [i, f] of docs.entries()) {
     showProgress(`변환 중 ${i + 1}/${docs.length}`);
-    const parentId = f.folderId ?? state.root.id;
+    const parentId = parentFolderOf(f, state.root.id);
     try {
       const taken = await takenIn(parentId);
       let name = toTxtName(f.name);
@@ -117,7 +118,7 @@ export async function convertFiles(files) {
       }
       const item = await uploadText(parentId, name, new Blob(['﻿', text.replace(/\r?\n/g, '\r\n')], { type: 'text/plain;charset=utf-8' }));
       taken.add(item.name.toLocaleLowerCase());
-      state.scan?.files.push({ id: item.id, name: item.name, size: item.size ?? 0, modified: item.lastModifiedDateTime ?? new Date().toISOString(), folderId: f.folderId });
+      state.scan?.files.push({ id: item.id, name: item.name, size: item.size ?? 0, modified: item.lastModifiedDateTime ?? new Date().toISOString(), folderId: f.folderId, parentId, path: f.path ?? '' });
 
       const tags = fileTags(getLibrary(), f.id);
       if (tags.length) update(ops.tag([item.id], tags));

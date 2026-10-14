@@ -220,7 +220,7 @@ function visibleFiles(lib) {
     .map(([gid, set]) => [findGroup(lib, gid), set])
     .filter(([g, set]) => g && set.size);
   return state.scan.files
-    .filter((f) => !q || f.name.toLowerCase().includes(q))
+    .filter((f) => !q || f.name.toLowerCase().includes(q) || (f.path ?? '').toLowerCase().includes(q))
     .filter((f) => filters.every(([g, set]) => fileKeysInGroup(lib, g, f).some((k) => set.has(k))))
     .sort(SORTERS[state.sort]);
 }
@@ -315,7 +315,7 @@ function card(lib, group, f, badges) {
   const el = h('li', {
     class: `card${compact ? ' compact' : ''}${isConvertible(f) ? ' is-doc' : ''}${state.selected.has(f.id) ? ' selected' : ''}`,
     'data-id': f.id,
-    title: compact ? f.name : null,
+    title: compact ? (f.path ? `${f.path}/${f.name}` : f.name) : null,
     onclick: (e) => {
       if (e.target.closest('button') || Date.now() < suppressClickUntil) return;
       if (state.selectMode) toggleSelected(f.id);
@@ -323,7 +323,7 @@ function card(lib, group, f, badges) {
       else cardMenu(f);
     },
   },
-    ...(compact ? compactRow(f, otherBadges) : fullCard(f, otherBadges)),
+    ...(compact ? compactRow(f, otherBadges, shownPath(group, f)) : fullCard(f, otherBadges, shownPath(group, f))),
   );
   addLongPress(el, () => {
     if (!state.selectMode) setSelectMode(true);
@@ -333,20 +333,30 @@ function card(lib, group, f, badges) {
 }
 
 // 간단히: 한 줄에 분류 색 점 · 파일 이름 · 용량 · ⋯ (줄을 누르면 txt는 리더로 열린다)
-function compactRow(f, otherBadges) {
+// 경로: 장르(폴더 연결) 탭에서는 칸 제목이 이미 장르 폴더이므로 그 아래 경로만 보여준다
+function shownPath(group, f) {
+  if (!f.path) return '';
+  return group.type === 'folder' && f.folderId ? f.path.split('/').slice(1).join('/') : f.path;
+}
+
+function compactRow(f, otherBadges, path) {
   return [
     otherBadges.length > 0 &&
       h('span', { class: 'dots', 'aria-label': otherBadges.map((b) => b.name).join(', ') },
         ...otherBadges.slice(0, 4).map((b) => h('span', { class: 'dot', style: `background:${b.color}`, title: b.name })),
       ),
-    h('span', { class: 'card-name' }, f.name),
+    h('span', { class: 'card-name' },
+      path && h('span', { class: 'card-path' }, `${path} › `),
+      f.name,
+    ),
     h('span', { class: 'card-size muted' }, formatSize(f.size)),
     h('button', { type: 'button', class: 'card-more', 'aria-label': '메뉴', onclick: () => cardMenu(f) }, '⋯'),
   ];
 }
 
-function fullCard(f, otherBadges) {
+function fullCard(f, otherBadges, path) {
   return [
+    path && h('div', { class: 'card-path muted small' }, `📁 ${path}`),
     h('div', { class: 'card-name' }, f.name),
     h('div', { class: 'card-meta muted small' },
       h('span', {}, formatSize(f.size)),
@@ -465,6 +475,7 @@ async function cardMenu(f) {
   const tags = [...(f.folderId ? [badges.get(f.folderId)] : []), ...fileTags(lib, f.id).map((t) => badges.get(t))].filter(Boolean);
   const info = h('div', {},
     h('p', { class: 'muted small' }, `${formatSize(f.size)} · ${formatDate(f.modified)}`),
+    h('p', { class: 'muted small card-location' }, `📁 ${state.root.name}${f.path ? ` / ${f.path.replaceAll('/', ' / ')}` : ''}`),
     tags.length > 0 && h('div', { class: 'badges' }, ...tags.map((b) => h('span', { class: 'badge', style: `--c:${b.color}` }, b.name))),
   );
   const choice = await sheet(f.name, info, [
@@ -506,7 +517,9 @@ async function moveDialog(ids) {
   ]);
   if (!target) return;
   if (group.type === 'folder') {
-    const files = state.scan.files.filter((f) => ids.includes(f.id));
+    // 이미 그 칸(장르 폴더나 그 하위 폴더)에 있는 파일은 옮기지 않는다
+    const targetKey = target === NONE ? null : target;
+    const files = state.scan.files.filter((f) => ids.includes(f.id) && f.folderId !== targetKey);
     await moveItems(files, folderTarget(target));
   } else {
     update(ops.moveInGroup(ids, group.id, null, target));

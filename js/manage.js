@@ -4,6 +4,7 @@ import { getLibrary, update } from './library.js';
 import { ops, sortedGroups, groupItems, newId, PALETTE } from './model.js';
 import { h } from './ui.js';
 import { addFolder, renameFolder, removeFolder } from './fileops.js';
+import { refreshScan } from './board.js';
 
 function move(list, index, dir) {
   const next = [...list];
@@ -98,6 +99,7 @@ function groupPanel(lib, g, gi, groups) {
                 'aria-label': '폴더 이름',
                 onchange: async (e) => {
                   if (!(await renameFolder(item, e.target.value))) e.target.value = item.name;
+                  else refreshScan(); // 하위 폴더 경로가 바뀌므로 목록을 다시 확인
                   renderManage();
                 },
               })
@@ -118,7 +120,10 @@ function groupPanel(lib, g, gi, groups) {
               type: 'button',
               class: 'danger',
               onclick: async () => {
-                if (await removeFolder(item)) renderManage();
+                if (await removeFolder(item)) {
+                  renderManage();
+                  refreshScan(); // 옮긴 하위 폴더 안 파일의 위치를 다시 확인
+                }
               },
             }, '삭제'),
           !isFolder &&
