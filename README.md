@@ -38,6 +38,7 @@ python3 -m http.server 8080
 | `js/reader.js` | txt 리더: 나눠 불러오기, 보기 설정, 스크롤·페이지 모드, 읽던 위치 |
 | `js/reader-find.js` | 리더 단어 찾기 (강조, 3/15 건수, 이전·다음) |
 | `js/reader-bookmarks.js` | 리더 책갈피 (추가·이동·삭제, library.json 공유) |
+| `js/editor.js` | txt 편집: 쓰기, 찾아 바꾸기, 빈 줄 제거, 원본 덮어쓰기 저장(eTag 확인, UTF-8 BOM) |
 | `js/encoding.js` | UTF-8·EUC-KR(CP949)·UTF-16 자동 판별 |
 | `js/convert.js` | doc·docx → UTF-8 txt 변환 |
 | `js/app.js` | 시작·로그인·루트 폴더 지정·설정, 동기화 표시 |
@@ -47,4 +48,5 @@ python3 -m http.server 8080
 | `vendor/msal-browser.min.js` | @azure/msal-browser 3.30.0 (MIT) |
 | `vendor/sortable.min.js` | SortableJS 1.15.6 (MIT) |
 | `vendor/mammoth.browser.min.js` | mammoth 1.8.0 (BSD-2-Clause), docx 텍스트 추출 |
+| `vendor/codemirror.min.js` | CodeMirror 6 (MIT) 묶음, 편집할 때만 불러옴 |
 | `vendor/pdfjs/` | pdf.js 4.10.38 legacy build (Apache-2.0), doc→PDF 텍스트 추출 |

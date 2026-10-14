@@ -243,7 +243,7 @@ function installSection() {
 
 // ---------- 작업 기록 ----------
 
-const ACTION_LABELS = { move: '이동', rename: '이름 변경', delete: '휴지통', mkdir: '폴더 생성', rmdir: '폴더 삭제', convert: 'txt 변환' };
+const ACTION_LABELS = { move: '이동', rename: '이름 변경', delete: '휴지통', mkdir: '폴더 생성', rmdir: '폴더 삭제', convert: 'txt 변환', edit: '편집 저장' };
 
 function renderLog() {
   state.view = 'log';

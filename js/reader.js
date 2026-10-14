@@ -2,11 +2,12 @@
 // 본문은 이 기기 화면에만 표시하며 다른 곳으로 보내지 않는다. 읽기 전용(복사만 허용).
 import { getLibrary, update, flush, onLibraryChange } from './library.js';
 import { ops, fileTags } from './model.js';
-import { openDownload } from './graph.js';
+import { openDownloadWithMeta } from './graph.js';
 import { detectEncoding, decodeAll, ENCODINGS } from './encoding.js';
 import { sheet, toast, errorMessage, writePref } from './state.js';
 import { createFind } from './reader-find.js';
 import { openBookmarks, snippetAt } from './reader-bookmarks.js';
+import { openEditor } from './editor.js';
 import { h } from './ui.js';
 
 // 글자 크기·여백은 화면 크기에 따라 다르므로 기기별, 나머지는 library.json으로 기기끼리 공유
@@ -77,6 +78,8 @@ export function openReader(file, { onTag, onClose } = {}) {
   let blocks = []; // { el, start, text }
   let fullText = null;
   let lastChar = 0; // 마지막으로 잰 화면 맨 위 글자 (대화상자가 본문을 덮고 있을 때 쓴다)
+  let fileETag = null; // 연 때의 파일 버전 (편집 저장 때 다른 곳에서 바뀌었는지 확인)
+  let editing = false;
 
   const textEl = h('div', { class: 'reader-text', translate: 'no' });
   const scroller = h('div', { class: 'reader-scroll' }, textEl);
@@ -102,6 +105,7 @@ export function openReader(file, { onTag, onClose } = {}) {
         themeBtn,
         h('button', { type: 'button', class: 'reader-btn', 'aria-label': '찾기', onclick: () => find.open() }, '🔍'),
         h('button', { type: 'button', class: 'reader-btn', 'aria-label': '책갈피', onclick: showBookmarks }, '🔖'),
+        h('button', { type: 'button', class: 'reader-btn', 'aria-label': '편집', onclick: edit }, '✏'),
         h('button', { type: 'button', class: 'reader-btn', onclick: () => onTag?.(file.id, renderTags) }, '분류'),
         h('button', { type: 'button', class: 'reader-btn', 'aria-label': '보기 설정', onclick: openSettings }, 'Aa'),
       ),
@@ -256,7 +260,7 @@ export function openReader(file, { onTag, onClose } = {}) {
 
   function currentChar() {
     if (!totalChars) return 0;
-    if (document.querySelector('dialog[open]')) return lastChar;
+    if (editing || document.querySelector('dialog[open]')) return lastChar;
     lastChar = measureChar();
     return lastChar;
   }
@@ -453,7 +457,8 @@ export function openReader(file, { onTag, onClose } = {}) {
 
   async function load() {
     try {
-      const res = await openDownload(file.id);
+      const { res, meta } = await openDownloadWithMeta(file.id);
+      fileETag = meta.eTag ?? null;
       const total = Number(res.headers.get('content-length')) || file.size || 0;
       const reader = res.body.getReader();
       let received = 0;
@@ -506,6 +511,42 @@ export function openReader(file, { onTag, onClose } = {}) {
     requestAnimationFrame(() => goToPos(pos));
   }
 
+  // ---------- 편집 (쓰기·바꾸기·빈 줄 제거) ----------
+
+  async function edit() {
+    if (!loaded) {
+      toast('다 불러온 뒤 편집할 수 있습니다');
+      return;
+    }
+    savePos();
+    editing = true;
+    await openEditor({
+      file,
+      text: getText(),
+      eTag: fileETag,
+      look: { fontSize: prefs.fontSize, lineHeight: prefs.lineHeight, dark: isDark() },
+      onSaved: (content) => replaceContent(content),
+      onClose: () => {
+        editing = false;
+      },
+    });
+    if (!document.querySelector('.editor')) editing = false;
+  }
+
+  // 저장한 내용으로 뷰어를 다시 그린다 (다시 받지 않음). 저장 뒤 파일은 UTF-8이다.
+  function replaceContent(content) {
+    const pos = lastChar / Math.max(1, totalChars);
+    clearText();
+    find.reset();
+    chunks = [new TextEncoder().encode(content)];
+    encoding = 'utf-8';
+    pushText(content, true);
+    statusEl.textContent = 'UTF-8';
+    layoutPages();
+    lastChar = Math.round(pos * totalChars);
+    requestAnimationFrame(() => goToPos(pos));
+  }
+
   // ---------- 조작 ----------
 
   function renderTags() {
@@ -547,7 +588,7 @@ export function openReader(file, { onTag, onClose } = {}) {
   root.addEventListener('dragover', (e) => e.preventDefault());
 
   function onKey(e) {
-    if (document.querySelector('dialog[open]')) return;
+    if (editing || document.querySelector('dialog[open]')) return;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       find.open();

@@ -474,3 +474,34 @@ button, .card, .chip, .tab { touch-action: manipulation; }
   .reader-tools { margin-left: auto; }
   .reader-tools .reader-btn { padding: 6px 7px; }
 }
+
+/* ---------- 편집기 (쓰기·바꾸기·빈 줄 제거) ---------- */
+.editor {
+  --r-bg: #ffffff;
+  --r-text: #1f2328;
+  --r-muted: #6b7078;
+  --r-bar: #f6f5f2;
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  background: var(--r-bg);
+  color: var(--r-text);
+}
+.editor[data-theme="dark"] { --r-bg: #121212; --r-text: #d6d6d6; --r-muted: #8a8f96; --r-bar: #1c1c1c; }
+.editor-host { flex: 1; min-height: 0; }
+.editor-host .cm-editor { height: 100%; background: var(--r-bg); color: var(--r-text); }
+.editor-host .cm-editor.cm-focused { outline: none; }
+.editor-host .cm-content { caret-color: var(--r-text); }
+.editor-save { font-weight: 700; }
+.editor-save.dirty { color: #fff; background: var(--accent); border-radius: 6px; }
+.editor-strong { font-weight: 700; }
+.replace-bar { flex-wrap: wrap; }
+.replace-fields { display: flex; gap: 4px; flex: 1 1 260px; min-width: 0; }
+.replace-fields .find-input { flex: 1; min-width: 0; }
+.reader-btn:disabled { opacity: 0.35; }
+@media (max-width: 600px) {
+  .replace-fields { flex-basis: 100%; }
+}
+.editor .reader-btn[aria-label="되돌리기"], .editor .reader-btn[aria-label="다시하기"] { font-size: 20px; line-height: 1; padding: 4px 8px; }

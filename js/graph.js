@@ -64,13 +64,18 @@ export function getItem(itemId) {
 }
 
 // 파일 내용을 받는다. 받은 내용은 이 기기와 OneDrive 사이에서만 오간다.
-export async function openDownload(itemId) {
+// meta.eTag는 편집 저장 때 "그사이 다른 곳에서 바뀌지 않았는지" 확인하는 데 쓴다
+export async function openDownloadWithMeta(itemId) {
   const meta = await graphJson(`/me/drive/items/${encodeURIComponent(itemId)}`);
   const url = meta['@microsoft.graph.downloadUrl'];
   if (!url) throw new Error('다운로드 주소를 받지 못했습니다');
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new GraphError(res.status, '');
-  return res;
+  return { res, meta };
+}
+
+export async function openDownload(itemId) {
+  return (await openDownloadWithMeta(itemId)).res;
 }
 
 export async function downloadFile(itemId) {
@@ -129,6 +134,16 @@ export function uploadText(parentId, name, blob) {
   return graphJson(`${itemPath(parentId)}:/${encodeURIComponent(name)}:/content?${FAIL_ON_CONFLICT}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    body: blob,
+  });
+}
+
+// 편집한 txt를 원본에 덮어쓴다. 연 뒤에 다른 곳에서 바뀌었으면(eTag 불일치) 412로 실패한다.
+// 이전 내용은 OneDrive 버전 기록에 남는다.
+export function overwriteText(itemId, blob, eTag) {
+  return graphJson(`${itemPath(itemId)}/content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'text/plain; charset=utf-8', ...(eTag ? { 'If-Match': eTag } : {}) },
     body: blob,
   });
 }
