@@ -157,6 +157,7 @@ export function renderBoard() {
       h('span', { class: 'muted small', id: 'scan-status' }),
     ),
     ),
+    h('div', { class: `recent ${state.density}`, id: 'recent' }),
     h('div', { class: `board ${state.density}`, id: 'board' }),
     h('div', { id: 'selection-bar' }),
   );
@@ -250,6 +251,7 @@ export function renderColumns() {
   const byColumn = new Map(columns.map((c) => [c.key, []]));
   for (const f of files) for (const k of fileKeysInGroup(lib, group, f)) byColumn.get(k)?.push(f);
 
+  renderRecent(lib, group, badges);
   board.replaceChildren(
     ...columns.map((col) => {
       const colFiles = byColumn.get(col.key);
@@ -534,7 +536,49 @@ async function trashAndRefresh(files, title) {
 }
 
 // 앱 내 그룹 항목을 체크박스로 붙이고 뗀다. 일부 파일에만 붙은 항목은 '-' 상태로 두면 그대로 유지된다.
+// 최근 읽음: 마지막으로 연 파일 5개 (library.json에 저장되어 기기끼리 공유). 검색 중에는 숨긴다.
+const RECENT_COUNT = 5;
+const RECENT_KEY = '__recent';
+
+function renderRecent(lib, group, badges) {
+  const el = document.getElementById('recent');
+  if (!el) return;
+  const byId = new Map(state.scan.files.map((f) => [f.id, f]));
+  const recent = Object.entries(lib.files)
+    .filter(([id, e]) => e.openedAt && byId.has(id))
+    .sort((a, b) => b[1].openedAt.localeCompare(a[1].openedAt))
+    .slice(0, RECENT_COUNT)
+    .map(([id]) => byId.get(id));
+  if (!recent.length || state.query.trim()) {
+    el.replaceChildren();
+    return;
+  }
+  const collapsed = state.collapsed.has(RECENT_KEY);
+  el.replaceChildren(
+    h('section', { class: collapsed ? 'column recent-column collapsed' : 'column recent-column' },
+      h('button', {
+        type: 'button',
+        class: 'column-head',
+        onclick: () => {
+          if (collapsed) state.collapsed.delete(RECENT_KEY);
+          else state.collapsed.add(RECENT_KEY);
+          renderColumns();
+        },
+      },
+        h('span', { class: 'grow' }, '🕘 최근 읽음'),
+        h('span', { class: 'muted small' }, `${recent.length}개`),
+      ),
+      h('ul', { class: 'cards' }, ...recent.map((f) => card(lib, group, f, badges))),
+    ),
+  );
+}
+
+function markOpened(f) {
+  update(ops.markOpened(f.id, new Date().toISOString()));
+}
+
 function read(f) {
+  markOpened(f);
   openReader(f, {
     onTag: (id, done) => tagDialog([id], done),
     onClose: () => {
@@ -583,6 +627,7 @@ export async function tagDialog(ids, after) {
 
 // 웹앱은 기기의 앱을 직접 실행할 수 없으므로, 파일을 내려받아 기기의 기본 앱으로 열게 한다
 async function openFile(f, button) {
+  markOpened(f);
   if (button) {
     button.disabled = true;
     button.textContent = '받는 중…';

@@ -180,6 +180,11 @@ export const ops = {
     }
   },
 
+  // 마지막으로 연 시각 (최근 읽음 목록용)
+  markOpened: (fileId, at) => (d) => {
+    d.files[fileId] = { ...(d.files[fileId] ?? {}), openedAt: at };
+  },
+
   // 읽던 위치 (0~1)
   setPos: (fileId, pos) => (d) => {
     d.files[fileId] = { ...(d.files[fileId] ?? {}), lastPos: pos };

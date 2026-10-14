@@ -580,3 +580,12 @@ main { padding-top: 0; }
 .card.compact .card-name { line-height: 1.25; }
 .card.compact .card-more { line-height: 1; }
 .board.compact .column-head { padding-top: 6px; padding-bottom: 6px; }
+
+/* 최근 읽음 (미분류 위) */
+.recent { margin-top: 10px; }
+.recent:empty { display: none; }
+.recent .recent-column { max-height: none; flex: none; }
+.recent + .board { margin-top: 10px; }
+@media (min-width: 601px) {
+  .recent .recent-column { max-width: 600px; }
+}
