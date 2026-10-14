@@ -23,6 +23,7 @@ export const state = {
   view: 'board',
   groupId: readPref('nl.group', null),
   sort: readPref('nl.sort', 'name'),
+  density: readPref('nl.density', 'compact'), // compact: 한 줄 목록, comfortable: 큰 카드
   query: '',
   collapsed: new Set(), // 접어 둔 칸
   filters: new Map(), // groupId → Set(칸 키)

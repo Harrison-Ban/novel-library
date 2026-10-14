@@ -56,6 +56,14 @@ function forgetMissingFiles(scan) {
   if (missing.length && missing.length <= Math.max(5, known.length / 2)) update(ops.forgetFiles(missing));
 }
 
+// 오늘이면 시각만, 아니면 날짜와 시각
+function shortTime(iso) {
+  const d = new Date(iso);
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' })
+    : formatDateTime(iso);
+}
+
 function updateStatus() {
   const el = document.getElementById('scan-status');
   if (!el) return;
@@ -64,7 +72,7 @@ function updateStatus() {
       ? `폴더 확인 중 ${state.progress.done}/${state.progress.total}`
       : '목록 확인 중…'
     : state.scan
-      ? `마지막 확인 ${formatDateTime(state.scan.scannedAt)}`
+      ? `${shortTime(state.scan.scannedAt)} 확인`
       : '';
 }
 
@@ -83,13 +91,12 @@ export function renderBoard() {
   const group = currentGroup(lib);
   const activeFilters = [...state.filters.entries()].filter(([gid, set]) => set.size && findGroup(lib, gid));
 
+  // 위쪽(폴더 이름·탭·검색·정렬·전체 개수)은 스크롤해도 고정된다
   render(
+    h('div', { class: 'board-head', id: 'board-head' },
     h('div', { class: 'list-head' },
-      h('div', {},
-        h('div', { class: 'root-name' }, state.root.name),
-        h('div', { class: 'muted small' }, state.root.path),
-      ),
-      h('div', { class: 'muted small', id: 'scan-status' }),
+      h('span', { class: 'root-name' }, state.root.name),
+      h('span', { class: 'muted small root-path' }, state.root.path),
     ),
     h('nav', { class: 'tabs' },
       ...groups.map((g) =>
@@ -144,12 +151,31 @@ export function renderBoard() {
     state.showFilters && filterPanel(lib, group),
     group?.type === 'folder' &&
       h('p', { class: 'muted small note' }, '폴더 연결 그룹: 칸을 옮기면 OneDrive에서 실제 파일이 그 폴더로 이동합니다 (확인 후 실행).'),
-    h('p', { class: 'summary', id: 'summary' }),
-    h('div', { class: 'board', id: 'board' }),
+    h('div', { class: 'summary-row' },
+      h('span', { class: 'summary-root' }, state.root.name),
+      h('span', { class: 'summary', id: 'summary' }),
+      h('span', { class: 'muted small', id: 'scan-status' }),
+    ),
+    ),
+    h('div', { class: `board ${state.density}`, id: 'board' }),
     h('div', { id: 'selection-bar' }),
   );
   updateStatus();
   renderColumns();
+  watchStickyHeights();
+}
+
+// 고정된 윗부분의 실제 높이를 CSS 변수로 알려 준다 (칸 제목 고정, 칸 높이 계산에 씀)
+const stickyObserver = new ResizeObserver(() => {
+  const root = document.documentElement.style;
+  root.setProperty('--topbar-h', `${document.querySelector('.topbar')?.offsetHeight ?? 0}px`);
+  root.setProperty('--boardhead-h', `${document.getElementById('board-head')?.offsetHeight ?? 0}px`);
+});
+function watchStickyHeights() {
+  stickyObserver.disconnect();
+  stickyObserver.observe(document.querySelector('.topbar'));
+  const head = document.getElementById('board-head');
+  if (head) stickyObserver.observe(head);
 }
 
 function filterPanel(lib, current) {
@@ -283,9 +309,11 @@ function card(lib, group, f, badges) {
     ...fileTags(lib, f.id).map((t) => badges.get(t)).filter((b) => b && b.groupId !== group.id),
   ].filter(Boolean);
 
+  const compact = state.density === 'compact';
   const el = h('li', {
-    class: state.selected.has(f.id) ? 'card selected' : 'card',
+    class: `card${compact ? ' compact' : ''}${state.selected.has(f.id) ? ' selected' : ''}`,
     'data-id': f.id,
+    title: compact ? f.name : null,
     onclick: (e) => {
       if (e.target.closest('button') || Date.now() < suppressClickUntil) return;
       if (state.selectMode) toggleSelected(f.id);
@@ -293,6 +321,30 @@ function card(lib, group, f, badges) {
       else cardMenu(f);
     },
   },
+    ...(compact ? compactRow(f, otherBadges) : fullCard(f, otherBadges)),
+  );
+  addLongPress(el, () => {
+    if (!state.selectMode) setSelectMode(true);
+    if (!state.selected.has(f.id)) toggleSelected(f.id);
+  });
+  return el;
+}
+
+// 간단히: 한 줄에 분류 색 점 · 파일 이름 · 용량 · ⋯ (줄을 누르면 txt는 리더로 열린다)
+function compactRow(f, otherBadges) {
+  return [
+    otherBadges.length > 0 &&
+      h('span', { class: 'dots', 'aria-label': otherBadges.map((b) => b.name).join(', ') },
+        ...otherBadges.slice(0, 4).map((b) => h('span', { class: 'dot', style: `background:${b.color}`, title: b.name })),
+      ),
+    h('span', { class: 'card-name' }, f.name),
+    h('span', { class: 'card-size muted' }, formatSize(f.size)),
+    h('button', { type: 'button', class: 'card-more', 'aria-label': '메뉴', onclick: () => cardMenu(f) }, '⋯'),
+  ];
+}
+
+function fullCard(f, otherBadges) {
+  return [
     h('div', { class: 'card-name' }, f.name),
     h('div', { class: 'card-meta muted small' },
       h('span', {}, formatSize(f.size)),
@@ -305,12 +357,7 @@ function card(lib, group, f, badges) {
       h('div', { class: 'badges' },
         ...otherBadges.map((b) => h('span', { class: 'badge', style: `--c:${b.color}` }, b.name)),
       ),
-  );
-  addLongPress(el, () => {
-    if (!state.selectMode) setSelectMode(true);
-    if (!state.selected.has(f.id)) toggleSelected(f.id);
-  });
-  return el;
+  ];
 }
 
 // 휴대폰: 길게 누르면 선택 모드. 손을 뗄 때 따라오는 클릭이 선택을 다시 풀지 않게 막는다.
@@ -411,7 +458,14 @@ function afterBulkChange() {
 // ---------- 카드 메뉴와 대화상자 ----------
 
 async function cardMenu(f) {
-  const choice = await sheet(f.name, h('p', { class: 'muted small' }, `${formatSize(f.size)} · ${formatDate(f.modified)}`), [
+  const lib = getLibrary();
+  const badges = badgeIndex(lib);
+  const tags = [...(f.folderId ? [badges.get(f.folderId)] : []), ...fileTags(lib, f.id).map((t) => badges.get(t))].filter(Boolean);
+  const info = h('div', {},
+    h('p', { class: 'muted small' }, `${formatSize(f.size)} · ${formatDate(f.modified)}`),
+    tags.length > 0 && h('div', { class: 'badges' }, ...tags.map((b) => h('span', { class: 'badge', style: `--c:${b.color}` }, b.name))),
+  );
+  const choice = await sheet(f.name, info, [
     ...(isReadable(f) ? [{ label: '리더로 읽기', class: 'primary', value: () => 'read' }] : []),
     ...(isConvertible(f) ? [{ label: 'txt로 변환', class: 'primary', value: () => 'convert' }] : []),
     { label: '열기 (기본 앱)', value: () => 'open' },

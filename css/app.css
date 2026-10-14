@@ -505,3 +505,78 @@ button, .card, .chip, .tab { touch-action: manipulation; }
   .replace-fields { flex-basis: 100%; }
 }
 .editor .reader-btn[aria-label="되돌리기"], .editor .reader-btn[aria-label="다시하기"] { font-size: 20px; line-height: 1; padding: 4px 8px; }
+
+/* ---------- 목록: 윗부분 고정, 한 줄 목록 ---------- */
+main { padding-top: 0; }
+.board-head {
+  position: sticky;
+  top: var(--topbar-h, 56px);
+  z-index: 9;
+  background: var(--bg);
+  margin: 0 -16px;
+  padding: 10px 16px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.board-head .summary { margin: 4px 0; }
+.board { margin-top: 10px; }
+.column { max-height: calc(100vh - var(--topbar-h, 56px) - var(--boardhead-h, 200px) - 24px); }
+.card.compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 4px 3px 8px;
+  border-radius: 6px;
+}
+.card.compact .card-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; line-height: 1.35; }
+.card.compact .card-size { font-size: 12px; white-space: nowrap; }
+.card.compact .card-more { margin-left: 0; padding: 0 4px; }
+.board.compact .cards { gap: 2px; padding: 4px; }
+.dots { display: inline-flex; gap: 2px; flex: none; }
+.dots .dot { width: 7px; height: 7px; }
+.segmented.density { justify-content: flex-start; margin: 6px 0; }
+@media (max-width: 600px) {
+  .board-head { margin: 0 -12px; padding: 6px 12px 0; }
+  .root-path { display: none; }
+  .root-name { font-size: 15px; }
+  .list-head { align-items: center; }
+  .tabs { margin-top: 4px; }
+  .tab { padding: 4px 12px; font-size: 14px; }
+  .toolbar { flex-wrap: nowrap; gap: 4px; margin: 6px 0 2px; }
+  .toolbar input { flex: 1 1 auto; flex-basis: auto; min-width: 0; padding: 5px 8px; }
+  .toolbar select, .toolbar button { flex: none; padding: 5px 8px; font-size: 14px; }
+  .board-head .summary { font-size: 13px; margin: 2px 0 4px; }
+  .board { margin-top: 8px; }
+  .column-head {
+    position: sticky;
+    top: calc(var(--topbar-h, 56px) + var(--boardhead-h, 150px));
+    z-index: 5;
+    background: var(--surface);
+    padding: 7px 12px;
+  }
+  .column { max-height: none; }
+}
+/* 한 화면 20편 이상: 줄 높이와 윗부분 높이를 줄인다 */
+.list-head { justify-content: flex-start; align-items: baseline; gap: 4px 10px; }
+.summary-row { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; margin: 4px 0; }
+.summary-row .summary { font-weight: 600; }
+.summary-row #scan-status { margin-left: auto; }
+.summary-root { display: none; font-weight: 600; }
+.card.compact { min-height: 24px; padding: 1px 2px 1px 8px; }
+.card.compact .card-name { line-height: 1.3; }
+.board.compact .cards { gap: 1px; padding: 3px 4px; }
+@media (max-width: 600px) {
+  .topbar { padding-top: calc(env(safe-area-inset-top) + 6px); padding-bottom: 6px; }
+  .topbar-actions button { padding: 4px 9px; }
+  .list-head { display: none; }
+  .summary-root { display: inline; }
+  .summary-root::after { content: " ·"; font-weight: 400; color: var(--muted); }
+  .summary-row { font-size: 13px; margin: 2px 0 4px; }
+  .summary-row .summary { font-size: 13px; }
+  .board-head { padding-top: 6px; }
+  .tabs { margin-top: 0; }
+}
+.card.compact { min-height: 22px; padding: 0 2px 0 8px; }
+.card.compact .card-name { line-height: 1.25; }
+.card.compact .card-more { line-height: 1; }
+.board.compact .column-head { padding-top: 6px; padding-bottom: 6px; }

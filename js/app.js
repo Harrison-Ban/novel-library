@@ -4,7 +4,7 @@ import { listChildren, getItem, onThrottle } from './graph.js';
 import { loadLibrary, getLibrary, update, commit, flush, checkRemote, onLibraryChange, getSyncStatus } from './library.js';
 import { clearCache, isDoc } from './scan.js';
 import { ops } from './model.js';
-import { state, render, toast, renderError, isDialogOpen } from './state.js';
+import { state, render, toast, renderError, isDialogOpen, writePref } from './state.js';
 import { showBoard, renderBoard, refreshScan } from './board.js';
 import { renderManage } from './manage.js';
 import { h, formatDateTime } from './ui.js';
@@ -207,6 +207,20 @@ async function renderSettings() {
         h('button', { onclick: () => renderPicker() }, '루트 폴더 바꾸기'),
         h('button', { onclick: renderLog }, '작업 기록'),
         h('button', { class: 'danger', onclick: () => flush().finally(logout) }, '로그아웃'),
+      ),
+      h('h3', {}, '목록 보기'),
+      h('div', { class: 'segmented density' },
+        ...[['compact', '간단히 (한 줄)'], ['comfortable', '자세히 (카드)']].map(([v, label]) =>
+          h('button', {
+            type: 'button',
+            class: state.density === v ? 'on' : '',
+            onclick: () => {
+              state.density = v;
+              writePref('nl.density', v);
+              renderSettings();
+            },
+          }, label),
+        ),
       ),
       h('h3', {}, '앱 설치'),
       installSection(),
