@@ -313,7 +313,7 @@ function card(lib, group, f, badges) {
 
   const compact = state.density === 'compact';
   const el = h('li', {
-    class: `card${compact ? ' compact' : ''}${state.selected.has(f.id) ? ' selected' : ''}`,
+    class: `card${compact ? ' compact' : ''}${isConvertible(f) ? ' is-doc' : ''}${state.selected.has(f.id) ? ' selected' : ''}`,
     'data-id': f.id,
     title: compact ? f.name : null,
     onclick: (e) => {

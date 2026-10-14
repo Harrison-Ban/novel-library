@@ -589,3 +589,12 @@ main { padding-top: 0; }
 @media (min-width: 601px) {
   .recent .recent-column { max-width: 600px; }
 }
+
+/* doc·docx 파일: 파란색 계열로 txt와 구별 */
+:root { --doc: #2b579a; }
+@media (prefers-color-scheme: dark) { :root { --doc: #8ab4f8; } }
+.card.is-doc {
+  background: color-mix(in srgb, var(--doc) 12%, var(--bg));
+  border-color: color-mix(in srgb, var(--doc) 45%, var(--border));
+}
+.card.is-doc .card-name { color: var(--doc); }
