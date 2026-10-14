@@ -6,6 +6,12 @@ OneDrive의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요
 - `main` 브랜치에 푸시하면 GitHub Actions가 GitHub Pages로 배포한다
 - 배포 주소: https://harrison-ban.github.io/novel-library/
 
+## 앱 설치와 업데이트
+
+- 휴대폰: 브라우저 메뉴(⋮) → "홈 화면에 추가" 또는 "앱 설치". PC: 주소창 오른쪽 설치 아이콘. 설정 화면의 **홈 화면에 설치** 버튼도 쓸 수 있다.
+- 배포하면 `sw.js`의 버전이 바뀐다. 앱을 연 직후에는 새 버전을 바로 적용하고, 사용 중이면 "새 버전이 있습니다" 알림을 띄운다.
+- localhost에서는 서비스 워커를 쓰지 않는다 (개발 중 옛 파일이 남지 않게).
+
 ## PC에서 직접 실행 (선택)
 
 ```
@@ -33,6 +39,9 @@ python3 -m http.server 8080
 | `js/encoding.js` | UTF-8·EUC-KR(CP949)·UTF-16 자동 판별 |
 | `js/convert.js` | doc·docx → UTF-8 txt 변환 |
 | `js/app.js` | 시작·로그인·루트 폴더 지정·설정, 동기화 표시 |
+| `js/pwa.js` | 앱 설치, 새 버전 자동 적용·새로고침 알림 |
+| `sw.js` | 서비스 워커: 앱 파일을 기기에 저장, 배포마다 버전 교체 (배포 때 버전·파일 목록 자동 기입) |
+| `manifest.webmanifest`, `icons/` | 홈 화면 설치 정보와 아이콘 |
 | `vendor/msal-browser.min.js` | @azure/msal-browser 3.30.0 (MIT) |
 | `vendor/sortable.min.js` | SortableJS 1.15.6 (MIT) |
 | `vendor/mammoth.browser.min.js` | mammoth 1.8.0 (BSD-2-Clause), docx 텍스트 추출 |

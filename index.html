@@ -4,7 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1e2125" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="소설 서재">
   <title>소설 서재</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="stylesheet" href="css/app.css">
   <script src="vendor/msal-browser.min.js"></script>
   <script src="vendor/sortable.min.js"></script>
@@ -14,7 +21,7 @@
   <header class="topbar">
     <h1 class="brand">소설 서재</h1>
     <nav class="topbar-actions" id="nav" hidden>
-      <button type="button" id="sync" class="sync saved">✓ 저장됨</button>
+      <button type="button" id="sync" class="sync saved"><span class="sync-icon">✓</span><span class="sync-label">저장됨</span></button>
       <button type="button" id="nav-board">보드</button>
       <button type="button" id="nav-manage">분류</button>
       <button type="button" id="nav-settings">설정</button>

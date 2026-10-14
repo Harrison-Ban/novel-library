@@ -31,6 +31,25 @@ jobs:
           printf '{ "version": "0.1.%s", "commit": "%s", "builtAt": "%s" }\n' \
             "${{ github.run_number }}" "${GITHUB_SHA::7}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > _site/version.json
           cat _site/version.json
+          # 서비스 워커: 배포마다 버전을 바꾸고, 미리 저장할 앱 파일 목록을 넣는다
+          # (큰 변환기 mammoth·pdf.js는 처음 쓸 때 저장)
+          python3 - <<'PY'
+          import json, os
+          files = ['./']
+          for dirpath, _, names in os.walk('_site'):
+              for n in names:
+                  rel = os.path.relpath(os.path.join(dirpath, n), '_site').replace(os.sep, '/')
+                  if rel in ('sw.js', 'version.json', '.nojekyll') or rel.startswith('vendor/pdfjs/') or rel == 'vendor/mammoth.browser.min.js':
+                      continue
+                  files.append(rel)
+          build = f"0.1.${{ github.run_number }}-{os.environ['GITHUB_SHA'][:7]}"
+          s = open('_site/sw.js', encoding='utf8').read()
+          s = s.replace("const BUILD = 'dev';", f"const BUILD = '{build}';")
+          s = s.replace("const PRECACHE = ['./', 'index.html'];", 'const PRECACHE = ' + json.dumps(sorted(files)) + ';')
+          assert build in s and 'manifest.webmanifest' in s
+          open('_site/sw.js', 'w', encoding='utf8').write(s)
+          print(build, len(files), 'files')
+          PY
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

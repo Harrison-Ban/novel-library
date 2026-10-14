@@ -8,6 +8,7 @@ import { state, render, toast, renderError, isDialogOpen } from './state.js';
 import { showBoard, renderBoard, refreshScan } from './board.js';
 import { renderManage } from './manage.js';
 import { h, formatDateTime } from './ui.js';
+import { setupPwa, canInstall, promptInstall, isStandalone } from './pwa.js';
 
 const nav = document.getElementById('nav');
 const REMOTE_CHECK_MS = 60_000;
@@ -15,6 +16,11 @@ const REMOTE_CHECK_MS = 60_000;
 // ---------- 시작 ----------
 
 async function start() {
+  setupPwa({
+    // 저장 대기 중인 변경, 열린 리더·대화상자가 있으면 바로 새로고침하지 않고 알림만 띄운다
+    isBusy: () => getSyncStatus().status !== 'saved' || !!document.querySelector('.reader, dialog[open]'),
+    beforeReload: () => flush(),
+  });
   if (!CONFIG.clientId) return renderNeedsConfig();
   try {
     await initAuth();
@@ -66,13 +72,15 @@ function rootPath(item) {
 
 function startSync() {
   const syncEl = document.getElementById('sync');
-  const labels = { saved: '✓ 저장됨', pending: '저장 대기', saving: '저장 중…', error: '⚠ 저장 실패' };
+  const labels = { saved: ['✓', '저장됨'], pending: ['…', '저장 대기'], saving: ['…', '저장 중'], error: ['⚠', '저장 실패'] };
   syncEl.onclick = () => {
     if (getSyncStatus().status === 'error') flush();
   };
   onLibraryChange((kind) => {
     const { status, error } = getSyncStatus();
-    syncEl.textContent = labels[status];
+    syncEl.querySelector('.sync-icon').textContent = labels[status][0];
+    syncEl.querySelector('.sync-label').textContent = labels[status][1];
+    syncEl.setAttribute('aria-label', labels[status][1]);
     syncEl.className = `sync ${status}`;
     syncEl.title = status === 'error' ? `${error?.message ?? ''} — 눌러서 다시 시도` : '';
     if (kind === 'data') rerenderCurrent();
@@ -200,6 +208,8 @@ async function renderSettings() {
         h('button', { onclick: renderLog }, '작업 기록'),
         h('button', { class: 'danger', onclick: () => flush().finally(logout) }, '로그아웃'),
       ),
+      h('h3', {}, '앱 설치'),
+      installSection(),
     ),
     h('footer', { class: 'version' }, versionEl),
   );
@@ -212,6 +222,23 @@ async function renderSettings() {
   } catch {
     versionEl.textContent = '버전 정보를 불러오지 못했습니다';
   }
+}
+
+function installSection() {
+  if (isStandalone()) return h('p', { class: 'muted small' }, '설치된 앱으로 실행 중입니다. 새 버전은 앱을 열 때 자동으로 적용됩니다.');
+  if (canInstall()) {
+    return h('div', { class: 'row' },
+      h('button', {
+        class: 'primary',
+        onclick: async () => {
+          if (await promptInstall()) toast('홈 화면에 설치했습니다');
+          renderSettings();
+        },
+      }, '홈 화면에 설치'),
+    );
+  }
+  return h('p', { class: 'muted small' },
+    '휴대폰: 브라우저 메뉴(⋮)에서 "홈 화면에 추가" 또는 "앱 설치". PC: 주소창 오른쪽의 설치 아이콘(⊕) 또는 메뉴의 "앱 설치". 아이폰: 공유 버튼 → "홈 화면에 추가".');
 }
 
 // ---------- 작업 기록 ----------

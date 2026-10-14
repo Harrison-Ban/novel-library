@@ -26,6 +26,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -386,3 +387,40 @@ body.reading { overflow: hidden; }
 .stepper-value { min-width: 4em; text-align: center; }
 .segmented { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .segmented button { padding: 5px 9px; }
+
+/* ---------- 5단계: 앱 설치·휴대폰 ---------- */
+button, .card, .chip, .tab { touch-action: manipulation; }
+.sync { display: inline-flex; align-items: center; gap: 4px; }
+.update-banner {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(env(safe-area-inset-bottom) + 12px);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+}
+.reader-scroll { overscroll-behavior: contain; }
+@media (max-width: 600px) {
+  .topbar { flex-wrap: nowrap; gap: 6px; padding-left: 12px; padding-right: 12px; }
+  .brand { font-size: 15px; white-space: nowrap; }
+  .topbar-actions { flex-wrap: nowrap; gap: 4px; }
+  .topbar-actions button { padding: 6px 8px; font-size: 14px; }
+  .sync-label { display: none; }
+  .sync { font-size: 15px; padding: 6px 2px; }
+  main { padding: 12px 12px calc(env(safe-area-inset-bottom) + 32px); }
+  .toolbar { flex-wrap: wrap; }
+  .toolbar input { flex-basis: 100%; }
+  .toolbar select, .toolbar button { flex: 1; }
+}
+@media (display-mode: standalone) {
+  body { overscroll-behavior-y: none; }
+}
