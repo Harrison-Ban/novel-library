@@ -1,7 +1,7 @@
 import { CONFIG } from './config.js';
 import { initAuth, getAccount, login, logout, redirectUri } from './auth.js';
 import { listChildren, getItem, onThrottle } from './graph.js';
-import { loadLibrary, getLibrary, update, commit, flush, checkRemote, onLibraryChange, getSyncStatus } from './library.js';
+import { loadLibrary, getLibrary, update, commit, flush, checkRemote, onLibraryChange, getSyncStatus, loadCachedLibrary, refreshLibrary, clearLibraryCache } from './library.js';
 import { clearCache, isDoc } from './scan.js';
 import { ops } from './model.js';
 import { state, render, toast, renderError, isDialogOpen, writePref } from './state.js';
@@ -35,25 +35,76 @@ async function start() {
   await openLibrary();
 }
 
+// 소설 폴더 정보도 기기에 저장해 두고 다음 시작 때 바로 쓴다
+const ROOT_CACHE_KEY = 'nl.root';
+function readRootCache() {
+  try {
+    return JSON.parse(localStorage.getItem(ROOT_CACHE_KEY));
+  } catch {
+    return null;
+  }
+}
+function setRoot(root) {
+  state.root = root;
+  writePref(ROOT_CACHE_KEY, JSON.stringify(root));
+}
+
+// 저장본이 있으면 서재를 바로 보여주고, 최신 설정과 폴더 정보는 뒤에서 받아 반영한다
 async function openLibrary() {
+  const cachedRoot = readRootCache();
+  if (!state.root && loadCachedLibrary() && cachedRoot && getLibrary().rootFolderId === cachedRoot.id) {
+    state.root = cachedRoot;
+    showBoard();
+    refreshInBackground(cachedRoot.id);
+    return;
+  }
+  await openLibraryFresh();
+}
+
+async function refreshInBackground(rootId) {
+  try {
+    await refreshLibrary();
+    if (!getLibrary().groups.length) update(ops.initDefaults());
+    const newRootId = getLibrary().rootFolderId;
+    if (newRootId !== rootId) {
+      // 다른 기기에서 소설 폴더를 바꿨다
+      state.root = null;
+      return openLibraryFresh();
+    }
+    const item = await getItem(rootId);
+    const root = { id: item.id, name: item.name, path: rootPath(item) };
+    if (root.name !== state.root?.name || root.path !== state.root?.path) {
+      setRoot(root);
+      if (state.view === 'board') renderBoard();
+    } else setRoot(root);
+  } catch (e) {
+    if (e.status === 404) {
+      toast('지정했던 소설 루트 폴더를 찾을 수 없습니다. 다시 골라 주세요.');
+      return renderPicker();
+    }
+    console.warn('설정 새로 받기 실패', e);
+  }
+}
+
+async function openLibraryFresh() {
   render(h('p', { class: 'muted center' }, '설정을 불러오는 중…'));
   try {
     await loadLibrary();
   } catch (e) {
-    return renderError(e, openLibrary);
+    return renderError(e, openLibraryFresh);
   }
   if (!getLibrary().groups.length) update(ops.initDefaults());
   const rootId = getLibrary().rootFolderId;
   if (!rootId) return renderPicker();
   try {
     const item = await getItem(rootId);
-    state.root = { id: item.id, name: item.name, path: rootPath(item) };
+    setRoot({ id: item.id, name: item.name, path: rootPath(item) });
   } catch (e) {
     if (e.status === 404) {
       toast('지정했던 소설 루트 폴더를 찾을 수 없습니다. 다시 골라 주세요.');
       return renderPicker();
     }
-    return renderError(e, openLibrary);
+    return renderError(e, openLibraryFresh);
   }
   showBoard();
 }
@@ -206,7 +257,18 @@ async function renderSettings() {
       h('div', { class: 'row' },
         h('button', { onclick: () => renderPicker() }, '루트 폴더 바꾸기'),
         h('button', { onclick: renderLog }, '작업 기록'),
-        h('button', { class: 'danger', onclick: () => flush().finally(logout) }, '로그아웃'),
+        h('button', {
+          class: 'danger',
+          onclick: () => flush().finally(() => {
+            // 이 기기에 저장해 둔 목록·설정도 지운다
+            clearLibraryCache();
+            clearCache();
+            try {
+              localStorage.removeItem(ROOT_CACHE_KEY);
+            } catch {}
+            logout();
+          }),
+        }, '로그아웃'),
       ),
       h('h3', {}, '목록 보기'),
       h('div', { class: 'segmented density' },

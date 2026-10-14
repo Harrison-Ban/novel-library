@@ -55,6 +55,39 @@ function applyOps(data, ops) {
   }
 }
 
+// 마지막으로 받은 library.json을 기기에 저장해 두고, 다음에 앱을 열 때 바로 쓴다
+const CACHE_KEY = 'nl.library';
+
+function setServer(data, tag) {
+  server = data;
+  eTag = tag;
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ data, eTag: tag }));
+  } catch {
+    // 저장 공간이 부족하면 저장본 없이 동작한다
+  }
+}
+
+// 기기에 저장해 둔 library.json으로 바로 시작한다. 있으면 true
+export function loadCachedLibrary() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(CACHE_KEY));
+    if (!cached?.data) return false;
+    server = { ...emptyLibrary(), ...cached.data };
+    eTag = cached.eTag ?? null;
+    rebuildLocal();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearLibraryCache() {
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch {}
+}
+
 function rebuildLocal() {
   local = structuredClone(server);
   applyOps(local, pending);
@@ -79,12 +112,20 @@ async function fetchRemote() {
 
 export async function loadLibrary() {
   const remote = await fetchRemote();
-  if (remote) {
-    server = remote.data;
-    eTag = remote.eTag;
-  }
+  if (remote) setServer(remote.data, remote.eTag);
   rebuildLocal();
   return local;
+}
+
+// 저장본으로 시작한 뒤 최신 내용을 받아 바뀌었으면 반영한다 (아직 저장 안 된 변경은 그 위에 다시 얹는다)
+export async function refreshLibrary() {
+  if (saving) await saving;
+  const remote = await fetchRemote();
+  if (!remote) return false;
+  setServer(remote.data, remote.eTag);
+  rebuildLocal();
+  emit('data');
+  return true;
 }
 
 // 다른 기기에서 바뀐 내용이 있으면 반영한다. 반영했으면 true
@@ -92,8 +133,7 @@ export async function checkRemote() {
   if (pending.length || saving) return false;
   const remote = await fetchRemote();
   if (!remote || pending.length || saving) return false;
-  server = remote.data;
-  eTag = remote.eTag;
+  setServer(remote.data, remote.eTag);
   rebuildLocal();
   emit('data');
   return true;
@@ -151,18 +191,14 @@ async function persist(ops) {
         body: JSON.stringify(next, null, 2),
       });
       const saved = await res.json();
-      server = next;
-      eTag = saved.eTag;
+      setServer(next, saved.eTag);
       rebuildLocal();
       if (merged) emit('data');
       return;
     } catch (e) {
       if (e.status !== 412 || attempt >= MAX_SAVE_ATTEMPTS) throw e;
       const remote = await fetchRemote();
-      if (remote) {
-        server = remote.data;
-        eTag = remote.eTag;
-      }
+      if (remote) setServer(remote.data, remote.eTag);
       merged = true;
     }
   }
