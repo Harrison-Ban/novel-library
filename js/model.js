@@ -185,6 +185,26 @@ export const ops = {
     d.files[fileId] = { ...(d.files[fileId] ?? {}), lastPos: pos };
   },
 
+  // 책갈피: { id, pos(0~1), snippet, at } — id로 구분해 여러 기기에서 동시에 추가해도 합쳐진다
+  addBookmark: (fileId, bookmark) => (d) => {
+    const entry = d.files[fileId] ?? {};
+    const list = (entry.bookmarks ?? []).filter((b) => b.id !== bookmark.id);
+    entry.bookmarks = [...list, bookmark].sort((a, b) => a.pos - b.pos);
+    d.files[fileId] = entry;
+  },
+
+  removeBookmark: (fileId, bookmarkId) => (d) => {
+    const entry = d.files[fileId];
+    if (!entry?.bookmarks) return;
+    entry.bookmarks = entry.bookmarks.filter((b) => b.id !== bookmarkId);
+    if (!entry.bookmarks.length) delete entry.bookmarks;
+  },
+
+  // 리더 공유 설정 (줄 간격·테마·넘기기 방식). 글자 크기·여백은 기기별로 따로 둔다.
+  setReaderPrefs: (patch) => (d) => {
+    d.readerPrefs = { ...(d.readerPrefs ?? {}), ...patch };
+  },
+
   // 작업 기록 (최근 것이 앞, 300개까지)
   log: (entries) => (d) => {
     d.log = [...entries, ...(d.log ?? [])].slice(0, 300);

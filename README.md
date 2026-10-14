@@ -1,6 +1,6 @@
 # 소설 서재 (novel-library)
 
-OneDrive의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요구사항은 [PRD.md](PRD.md), 작업 규칙은 [CLAUDE.md](CLAUDE.md), 처음 설정은 [docs/SETUP.md](docs/SETUP.md)를 본다.
+OneDrive의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요구사항은 [PRD.md](PRD.md)와 [docs/VIEWER-PRD.md](docs/VIEWER-PRD.md), 작업 규칙은 [CLAUDE.md](CLAUDE.md), 처음 설정은 [docs/SETUP.md](docs/SETUP.md)를 본다.
 
 - 서버 없는 정적 웹앱, 빌드 과정 없음
 - `main` 브랜치에 푸시하면 GitHub Actions가 GitHub Pages로 배포한다
@@ -36,6 +36,8 @@ python3 -m http.server 8080
 | `js/manage.js` | 분류 관리 화면 |
 | `js/fileops.js` | 파일 이동·이름 변경·휴지통, 폴더 생성·이름 변경·삭제, 이름 충돌 처리, 작업 기록 |
 | `js/reader.js` | txt 리더: 나눠 불러오기, 보기 설정, 스크롤·페이지 모드, 읽던 위치 |
+| `js/reader-find.js` | 리더 단어 찾기 (강조, 3/15 건수, 이전·다음) |
+| `js/reader-bookmarks.js` | 리더 책갈피 (추가·이동·삭제, library.json 공유) |
 | `js/encoding.js` | UTF-8·EUC-KR(CP949)·UTF-16 자동 판별 |
 | `js/convert.js` | doc·docx → UTF-8 txt 변환 |
 | `js/app.js` | 시작·로그인·루트 폴더 지정·설정, 동기화 표시 |

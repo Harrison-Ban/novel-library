@@ -25,6 +25,7 @@ const listeners = new Set();
 // kind: 'status'(저장 상태 변화) | 'data'(다른 기기 변경이 반영됨)
 export function onLibraryChange(fn) {
   listeners.add(fn);
+  return () => listeners.delete(fn);
 }
 function emit(kind) {
   for (const fn of listeners) fn(kind);
