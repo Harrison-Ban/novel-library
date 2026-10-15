@@ -9,6 +9,14 @@ function readPref(key, fallback) {
   }
 }
 
+function readJsonPref(key, fallback) {
+  try {
+    return JSON.parse(readPref(key, 'null')) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function writePref(key, value) {
   try {
     localStorage.setItem(key, value);
@@ -25,7 +33,9 @@ export const state = {
   sort: readPref('nl.sort', 'name'),
   density: readPref('nl.density', 'compact'), // compact: 한 줄 목록, comfortable: 큰 카드
   query: '',
-  collapsed: new Set(), // 접어 둔 칸
+  collapsed: new Set(), // 지금 그룹에서 접어 둔 칸
+  collapsedByGroup: readJsonPref('nl.collapsed', {}), // 그룹별로 접어 둔 칸 (기기에 기억)
+  recentCollapsed: readPref('nl.recentCollapsed', '0') === '1', // 최근 읽음은 그룹과 상관없이 따로
   filters: new Map(), // groupId → Set(칸 키)
   showFilters: false,
   selectMode: false,

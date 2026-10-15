@@ -81,8 +81,21 @@ function updateStatus() {
 function currentGroup(lib) {
   const groups = sortedGroups(lib);
   const group = findGroup(lib, state.groupId) ?? groups[0];
-  state.groupId = group?.id ?? null;
+  const id = group?.id ?? null;
+  if (id !== state.groupId || !state.collapsedLoaded) useGroupCollapsed(id);
+  state.groupId = id;
   return group;
+}
+
+// 접어 둔 칸은 그룹 탭마다 기기에 기억한다
+function useGroupCollapsed(groupId) {
+  state.collapsed = new Set(state.collapsedByGroup[groupId] ?? []);
+  state.collapsedLoaded = true;
+}
+
+function saveCollapsed() {
+  state.collapsedByGroup[state.groupId] = [...state.collapsed];
+  writePref('nl.collapsed', JSON.stringify(state.collapsedByGroup));
 }
 
 export function renderBoard() {
@@ -106,7 +119,7 @@ export function renderBoard() {
           onclick: () => {
             state.groupId = g.id;
             writePref('nl.group', g.id);
-            state.collapsed.clear();
+            useGroupCollapsed(g.id);
             renderBoard();
           },
         }, g.name),
@@ -155,6 +168,7 @@ export function renderBoard() {
       h('span', { class: 'summary-root' }, state.root.name),
       h('span', { class: 'summary', id: 'summary' }),
       h('span', { class: 'muted small', id: 'scan-status' }),
+      h('button', { type: 'button', class: 'link toggle-all', id: 'toggle-all' }),
     ),
     ),
     h('div', { class: `recent ${state.density}`, id: 'recent' }),
@@ -252,6 +266,18 @@ export function renderColumns() {
   for (const f of files) for (const k of fileKeysInGroup(lib, group, f)) byColumn.get(k)?.push(f);
 
   renderRecent(lib, group, badges);
+  // 모두 접기/펼치기: 칸(폴더·분류)만 대상, 최근 읽음은 그대로 둔다
+  const toggleAll = document.getElementById('toggle-all');
+  if (toggleAll) {
+    const allCollapsed = columns.every((c) => state.collapsed.has(c.key));
+    toggleAll.textContent = allCollapsed ? '⊞ 모두 펼치기' : '⊟ 모두 접기';
+    toggleAll.onclick = () => {
+      if (allCollapsed) state.collapsed.clear();
+      else for (const c of columns) state.collapsed.add(c.key);
+      saveCollapsed();
+      renderColumns();
+    };
+  }
   board.replaceChildren(
     ...columns.map((col) => {
       const colFiles = byColumn.get(col.key);
@@ -263,6 +289,7 @@ export function renderColumns() {
           onclick: () => {
             if (collapsed) state.collapsed.delete(col.key);
             else state.collapsed.add(col.key);
+            saveCollapsed();
             renderColumns();
           },
         },
@@ -551,7 +578,6 @@ async function trashAndRefresh(files, title) {
 // 앱 내 그룹 항목을 체크박스로 붙이고 뗀다. 일부 파일에만 붙은 항목은 '-' 상태로 두면 그대로 유지된다.
 // 최근 읽음: 마지막으로 연 파일 5개 (library.json에 저장되어 기기끼리 공유). 검색 중에는 숨긴다.
 const RECENT_COUNT = 5;
-const RECENT_KEY = '__recent';
 
 function renderRecent(lib, group, badges) {
   const el = document.getElementById('recent');
@@ -566,15 +592,15 @@ function renderRecent(lib, group, badges) {
     el.replaceChildren();
     return;
   }
-  const collapsed = state.collapsed.has(RECENT_KEY);
+  const collapsed = state.recentCollapsed;
   el.replaceChildren(
     h('section', { class: collapsed ? 'column recent-column collapsed' : 'column recent-column' },
       h('button', {
         type: 'button',
         class: 'column-head',
         onclick: () => {
-          if (collapsed) state.collapsed.delete(RECENT_KEY);
-          else state.collapsed.add(RECENT_KEY);
+          state.recentCollapsed = !collapsed;
+          writePref('nl.recentCollapsed', state.recentCollapsed ? '1' : '0');
           renderColumns();
         },
       },

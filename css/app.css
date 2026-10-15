@@ -604,3 +604,7 @@ main { padding-top: 0; }
 .card.compact .card-name .card-path { font-size: 11.5px; }
 .card.is-doc .card-path { color: color-mix(in srgb, var(--doc) 60%, var(--muted)); }
 .card-location { overflow-wrap: anywhere; }
+
+/* 모두 접기/펼치기 */
+.toggle-all { font-size: 13px; white-space: nowrap; padding: 2px 0; }
+.summary-row #scan-status { margin-left: auto; }
