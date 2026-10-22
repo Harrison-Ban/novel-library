@@ -59,6 +59,19 @@ export async function listChildren(folderId) {
   return items;
 }
 
+// 폴더 아래 모든 항목(맨 아래까지)을 페이지 단위로 한꺼번에 받는다 (폴더마다 따로 묻지 않아 빠름)
+export async function listAllBelow(folderId, onPage) {
+  let next = `/me/drive/items/${encodeURIComponent(folderId)}/delta?$select=${CHILD_FIELDS},parentReference,deleted`;
+  const items = [];
+  while (next) {
+    const page = await graphJson(next);
+    items.push(...page.value);
+    onPage?.(items.length);
+    next = page['@odata.nextLink'] ?? null;
+  }
+  return items;
+}
+
 export function getItem(itemId) {
   return graphJson(`/me/drive/items/${encodeURIComponent(itemId)}?$select=id,name,folder,parentReference`);
 }

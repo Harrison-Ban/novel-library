@@ -69,7 +69,9 @@ function updateStatus() {
   if (!el) return;
   el.textContent = state.scanning
     ? state.progress
-      ? `폴더 확인 중 ${state.progress.done}/${state.progress.total}`
+      ? state.progress.total == null
+        ? `목록 받는 중 ${state.progress.done.toLocaleString()}개`
+        : `폴더 확인 중 ${state.progress.done}/${state.progress.total}`
       : '목록 확인 중…'
     : state.scan
       ? `${shortTime(state.scan.scannedAt)} 확인`
@@ -340,7 +342,7 @@ export function renderColumns() {
 
 // ---------- 장르 칸 안의 하위 폴더 트리 ----------
 
-// 칸(맨 위 장르 폴더) 안의 파일을 실제 하위 폴더별로 묶는다. 파일이 하나도 없는 폴더는 뺀다.
+// 칸(맨 위 장르 폴더) 안의 파일을 실제 하위 폴더별로 묶는다. 파일이 없는 하위 폴더도 보여 준다 (검색 중 제외).
 function folderTree(files, topId) {
   const known = new Set([topId, ...(state.scan.allFolders ?? []).filter((f) => f.topId === topId).map((f) => f.id)]);
   const byParent = new Map();
@@ -361,7 +363,7 @@ function folderTree(files, topId) {
     const subs = (children.get(folder.id) ?? [])
       .sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
       .map(build)
-      .filter((n) => n.count > 0);
+      .filter((n) => n.count > 0 || !state.query); // 검색 중에는 결과가 있는 폴더만
     return {
       folder,
       own,
@@ -395,7 +397,7 @@ function folderTreeView(lib, group, node, colKey, badges, depth) {
         },
           h('span', { class: 'subfolder-caret' }, collapsed ? '▸' : '▾'),
           h('span', { class: 'grow' }, `📁 ${sub.folder.name}`),
-          h('span', { class: 'muted small' }, `${sub.count}개 · ${formatSize(sub.size)}`),
+          h('span', { class: 'muted small' }, sub.count ? `${sub.count}개 · ${formatSize(sub.size)}` : '0개'),
         ),
         !collapsed && folderTreeView(lib, group, sub, colKey, badges, depth + 1),
       );

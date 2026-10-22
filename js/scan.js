@@ -1,6 +1,6 @@
 // F3: 소설 루트 폴더와 그 아래 모든 하위 폴더(맨 아래까지)의 txt·doc·docx 목록
 // (이름·용량·수정일·위치만 다루고, 본문은 읽지 않음)
-import { listChildren } from './graph.js';
+import { listChildren, listAllBelow } from './graph.js';
 
 const DOC_EXT = /\.(txt|doc|docx)$/i;
 const CACHE_KEY = 'nl.scan';
@@ -45,12 +45,65 @@ function runPool(queue, n, handle) {
   });
 }
 
+// onProgress(done, total): 폴더별 확인 중이면 total이 폴더 수, 한꺼번에 받는 중이면 total은 null(받은 항목 수)
 export async function scanRoot(rootId, onProgress) {
+  let result;
+  try {
+    result = await scanByDelta(rootId, onProgress);
+  } catch (e) {
+    console.warn('한꺼번에 받기 실패, 폴더별로 확인합니다', e);
+    result = await scanByFolders(rootId, onProgress);
+  }
+  saveCache(result);
+  return result;
+}
+
+const byName = (a, b) => a.name.localeCompare(b.name, 'ko');
+
+async function scanByDelta(rootId, onProgress) {
+  onProgress?.(0, null);
+  const items = new Map();
+  for (const it of await listAllBelow(rootId, (n) => onProgress?.(n, null))) {
+    if (it.deleted) items.delete(it.id);
+    else items.set(it.id, it);
+  }
+  items.delete(rootId);
+  const parentOf = (it) => it.parentReference?.id;
+  // 폴더마다 칸(topId)과 경로를 위로 거슬러 올라가며 구한다
+  const info = new Map([[rootId, { topId: null, path: '' }]]);
+  const resolve = (id, seen = 0) => {
+    if (info.has(id)) return info.get(id);
+    const it = items.get(id);
+    if (!it?.folder || seen > 200) return null;
+    const p = resolve(parentOf(it), seen + 1);
+    const r = p && { topId: p.topId ?? id, path: p.path ? `${p.path}/${it.name}` : it.name };
+    info.set(id, r);
+    return r;
+  };
+  const folders = [];
+  const allFolders = [];
+  const files = [];
+  for (const it of items.values()) {
+    if (it.folder) {
+      const r = resolve(it.id);
+      if (!r) continue;
+      if (parentOf(it) === rootId) folders.push({ id: it.id, name: it.name });
+      allFolders.push({ id: it.id, name: it.name, parentId: parentOf(it), topId: r.topId, path: r.path });
+    } else if (isDoc(it)) {
+      const r = resolve(parentOf(it));
+      if (r) files.push(toFile(it, r.topId, parentOf(it), r.path));
+    }
+  }
+  folders.sort(byName);
+  return { rootId, folders, allFolders, files, truncated: false, scannedAt: new Date().toISOString() };
+}
+
+async function scanByFolders(rootId, onProgress) {
   const rootChildren = await listChildren(rootId);
   const folders = rootChildren
     .filter((i) => i.folder)
     .map((f) => ({ id: f.id, name: f.name }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    .sort(byName);
   const files = rootChildren.filter(isDoc).map((f) => toFile(f, null, rootId, ''));
   // 모든 하위 폴더: { id, name, parentId, topId(칸 폴더), path }
   const allFolders = [];
@@ -77,9 +130,7 @@ export async function scanRoot(rootId, onProgress) {
     onProgress?.(++done, found);
   });
 
-  const result = { rootId, folders, allFolders, files, truncated, scannedAt: new Date().toISOString() };
-  saveCache(result);
-  return result;
+  return { rootId, folders, allFolders, files, truncated, scannedAt: new Date().toISOString() };
 }
 
 // 마지막 목록을 기기에 저장해 다음에 빠르게 연다
