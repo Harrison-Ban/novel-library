@@ -1,7 +1,7 @@
 // 보드: 선택한 그룹의 항목마다 칸을 만들고 파일 카드를 놓는다 (F5·F6·F7·F9)
 import { state, render, toast, errorMessage, sheet, writePref } from './state.js';
 import { getLibrary, update } from './library.js';
-import { scanRoot, loadCache } from './scan.js';
+import { scanRoot, loadCache, parentFolderOf } from './scan.js';
 import { downloadFile } from './graph.js';
 import { moveItems, renameFile, trashFiles, pickFolder } from './fileops.js';
 import { openReader, isReadable } from './reader.js';
@@ -301,9 +301,12 @@ export function renderColumns() {
           h('div', { class: 'column-action' },
             h('button', { type: 'button', class: 'danger', onclick: () => trashAndRefresh(colFiles, '삭제예정 파일 휴지통으로') }, `${colFiles.length}개 휴지통으로`),
           ),
-        h('ul', { class: 'cards', 'data-col': col.key },
-          ...colFiles.map((f) => card(lib, group, f, badges)),
-        ),
+        group.type === 'folder' && col.key !== NONE
+          // 장르(폴더 연결) 칸: 하위 폴더를 실제 폴더 구조로 보여준다
+          ? folderTreeView(lib, group, folderTree(colFiles, col.key), col.key, badges, 0)
+          : h('ul', { class: 'cards', 'data-col': col.key, 'data-folder': group.type === 'folder' ? state.root.id : null },
+              ...colFiles.map((f) => card(lib, group, f, badges)),
+            ),
       );
     }),
   );
@@ -318,9 +321,12 @@ export function renderColumns() {
           if (evt.from === evt.to) return;
           const fileId = evt.item.dataset.id;
           if (group.type === 'folder') {
-            // 폴더 연결: 실제 파일 이동 (확인 후)
+            // 폴더 연결: 놓은 칸이나 하위 폴더로 실제 파일 이동 (확인 후)
             const file = state.scan.files.find((f) => f.id === fileId);
-            if (file) await moveItems([file], folderTarget(evt.to.dataset.col));
+            const targetId = evt.to.dataset.folder;
+            if (file && targetId && targetId !== parentFolderOf(file, state.root.id)) {
+              await moveItems([file], { id: targetId, name: folderLabel(targetId) });
+            }
           } else {
             update(ops.moveInGroup([fileId], group.id, evt.from.dataset.col, evt.to.dataset.col));
           }
@@ -330,6 +336,78 @@ export function renderColumns() {
     }
   }
   renderSelectionBar();
+}
+
+// ---------- 장르 칸 안의 하위 폴더 트리 ----------
+
+// 칸(맨 위 장르 폴더) 안의 파일을 실제 하위 폴더별로 묶는다. 파일이 하나도 없는 폴더는 뺀다.
+function folderTree(files, topId) {
+  const known = new Set([topId, ...(state.scan.allFolders ?? []).filter((f) => f.topId === topId).map((f) => f.id)]);
+  const byParent = new Map();
+  for (const f of files) {
+    let p = parentFolderOf(f, state.root.id);
+    if (!known.has(p)) p = topId; // 폴더 정보가 없으면 칸 바로 아래에 둔다
+    if (!byParent.has(p)) byParent.set(p, []);
+    byParent.get(p).push(f);
+  }
+  const children = new Map();
+  for (const folder of state.scan.allFolders ?? []) {
+    if (folder.topId !== topId || folder.id === topId) continue;
+    if (!children.has(folder.parentId)) children.set(folder.parentId, []);
+    children.get(folder.parentId).push(folder);
+  }
+  const build = (folder) => {
+    const own = byParent.get(folder.id) ?? [];
+    const subs = (children.get(folder.id) ?? [])
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
+      .map(build)
+      .filter((n) => n.count > 0);
+    return {
+      folder,
+      own,
+      subs,
+      count: own.length + subs.reduce((s, n) => s + n.count, 0),
+      size: own.reduce((s, f) => s + f.size, 0) + subs.reduce((s, n) => s + n.size, 0),
+    };
+  };
+  return build({ id: topId });
+}
+
+function folderTreeView(lib, group, node, colKey, badges, depth) {
+  return h('div', { class: 'tree' },
+    h('ul', { class: 'cards', 'data-col': colKey, 'data-folder': node.folder.id },
+      ...node.own.map((f) => card(lib, group, f, badges)),
+    ),
+    ...node.subs.map((sub) => {
+      const key = `sub:${sub.folder.id}`;
+      const collapsed = state.collapsed.has(key);
+      return h('div', { class: collapsed ? 'subfolder collapsed' : 'subfolder', style: `--depth:${depth}` },
+        h('button', {
+          type: 'button',
+          class: 'subfolder-head',
+          title: sub.folder.path,
+          onclick: () => {
+            if (collapsed) state.collapsed.delete(key);
+            else state.collapsed.add(key);
+            saveCollapsed();
+            renderColumns();
+          },
+        },
+          h('span', { class: 'subfolder-caret' }, collapsed ? '▸' : '▾'),
+          h('span', { class: 'grow' }, `📁 ${sub.folder.name}`),
+          h('span', { class: 'muted small' }, `${sub.count}개 · ${formatSize(sub.size)}`),
+        ),
+        !collapsed && folderTreeView(lib, group, sub, colKey, badges, depth + 1),
+      );
+    }),
+  );
+}
+
+function folderLabel(folderId) {
+  if (folderId === state.root.id) return `${state.root.name} (루트)`;
+  const top = state.scan.folders.find((f) => f.id === folderId);
+  if (top) return top.name;
+  return state.scan.allFolders?.find((f) => f.id === folderId)?.path ?? '폴더';
 }
 
 function card(lib, group, f, badges) {
@@ -361,9 +439,12 @@ function card(lib, group, f, badges) {
 
 // 간단히: 한 줄에 분류 색 점 · 파일 이름 · 용량 · ⋯ (줄을 누르면 txt는 리더로 열린다)
 // 경로: 장르(폴더 연결) 탭에서는 칸 제목이 이미 장르 폴더이므로 그 아래 경로만 보여준다
+let inRecent = false; // 최근 읽음 칸을 그리는 중 (트리가 없으므로 경로를 붙인다)
+
 function shownPath(group, f) {
   if (!f.path) return '';
-  return group.type === 'folder' && f.folderId ? f.path.split('/').slice(1).join('/') : f.path;
+  // 장르 탭은 칸 안의 폴더 구조(트리)로 위치가 보이므로 경로를 붙이지 않는다 (최근 읽음 칸은 예외)
+  return group.type === 'folder' && f.folderId && !inRecent ? '' : f.path;
 }
 
 function compactRow(f, otherBadges, path) {
@@ -607,7 +688,14 @@ function renderRecent(lib, group, badges) {
         h('span', { class: 'grow' }, '🕘 최근 읽음'),
         h('span', { class: 'muted small' }, `${recent.length}개`),
       ),
-      h('ul', { class: 'cards' }, ...recent.map((f) => card(lib, group, f, badges))),
+      h('ul', { class: 'cards' }, ...(() => {
+        inRecent = true;
+        try {
+          return recent.map((f) => card(lib, group, f, badges));
+        } finally {
+          inRecent = false;
+        }
+      })()),
     ),
   );
 }
