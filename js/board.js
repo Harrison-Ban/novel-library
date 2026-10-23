@@ -1,7 +1,7 @@
 // 보드: 선택한 그룹의 항목마다 칸을 만들고 파일 카드를 놓는다 (F5·F6·F7·F9)
 import { state, render, toast, errorMessage, sheet, writePref } from './state.js';
 import { getLibrary, update } from './library.js';
-import { scanRoot, loadCache, parentFolderOf } from './scan.js';
+import { scanRoot, loadCache } from './scan.js';
 import { downloadFile } from './graph.js';
 import { moveItems, renameFile, trashFiles, pickFolder } from './fileops.js';
 import { openReader, isReadable } from './reader.js';
@@ -69,9 +69,7 @@ function updateStatus() {
   if (!el) return;
   el.textContent = state.scanning
     ? state.progress
-      ? state.progress.total == null
-        ? `목록 받는 중 ${state.progress.done.toLocaleString()}개`
-        : `폴더 확인 중 ${state.progress.done}/${state.progress.total}`
+      ? `폴더 확인 중 ${state.progress.done}/${state.progress.total}`
       : '목록 확인 중…'
     : state.scan
       ? `${shortTime(state.scan.scannedAt)} 확인`
@@ -236,7 +234,7 @@ function visibleFiles(lib) {
     .map(([gid, set]) => [findGroup(lib, gid), set])
     .filter(([g, set]) => g && set.size);
   return state.scan.files
-    .filter((f) => !q || f.name.toLowerCase().includes(q) || (f.path ?? '').toLowerCase().includes(q))
+    .filter((f) => !q || f.name.toLowerCase().includes(q))
     .filter((f) => filters.every(([g, set]) => fileKeysInGroup(lib, g, f).some((k) => set.has(k))))
     .sort(SORTERS[state.sort]);
 }
@@ -303,12 +301,9 @@ export function renderColumns() {
           h('div', { class: 'column-action' },
             h('button', { type: 'button', class: 'danger', onclick: () => trashAndRefresh(colFiles, '삭제예정 파일 휴지통으로') }, `${colFiles.length}개 휴지통으로`),
           ),
-        group.type === 'folder' && col.key !== NONE
-          // 장르(폴더 연결) 칸: 하위 폴더를 실제 폴더 구조로 보여준다
-          ? folderTreeView(lib, group, folderTree(colFiles, col.key), col.key, badges, 0)
-          : h('ul', { class: 'cards', 'data-col': col.key, 'data-folder': group.type === 'folder' ? state.root.id : null },
-              ...colFiles.map((f) => card(lib, group, f, badges)),
-            ),
+        h('ul', { class: 'cards', 'data-col': col.key },
+          ...colFiles.map((f) => card(lib, group, f, badges)),
+        ),
       );
     }),
   );
@@ -323,12 +318,9 @@ export function renderColumns() {
           if (evt.from === evt.to) return;
           const fileId = evt.item.dataset.id;
           if (group.type === 'folder') {
-            // 폴더 연결: 놓은 칸이나 하위 폴더로 실제 파일 이동 (확인 후)
+            // 폴더 연결: 실제 파일 이동 (확인 후)
             const file = state.scan.files.find((f) => f.id === fileId);
-            const targetId = evt.to.dataset.folder;
-            if (file && targetId && targetId !== parentFolderOf(file, state.root.id)) {
-              await moveItems([file], { id: targetId, name: folderLabel(targetId) });
-            }
+            if (file) await moveItems([file], folderTarget(evt.to.dataset.col));
           } else {
             update(ops.moveInGroup([fileId], group.id, evt.from.dataset.col, evt.to.dataset.col));
           }
@@ -338,78 +330,6 @@ export function renderColumns() {
     }
   }
   renderSelectionBar();
-}
-
-// ---------- 장르 칸 안의 하위 폴더 트리 ----------
-
-// 칸(맨 위 장르 폴더) 안의 파일을 실제 하위 폴더별로 묶는다. 파일이 없는 하위 폴더도 보여 준다 (검색 중 제외).
-function folderTree(files, topId) {
-  const known = new Set([topId, ...(state.scan.allFolders ?? []).filter((f) => f.topId === topId).map((f) => f.id)]);
-  const byParent = new Map();
-  for (const f of files) {
-    let p = parentFolderOf(f, state.root.id);
-    if (!known.has(p)) p = topId; // 폴더 정보가 없으면 칸 바로 아래에 둔다
-    if (!byParent.has(p)) byParent.set(p, []);
-    byParent.get(p).push(f);
-  }
-  const children = new Map();
-  for (const folder of state.scan.allFolders ?? []) {
-    if (folder.topId !== topId || folder.id === topId) continue;
-    if (!children.has(folder.parentId)) children.set(folder.parentId, []);
-    children.get(folder.parentId).push(folder);
-  }
-  const build = (folder) => {
-    const own = byParent.get(folder.id) ?? [];
-    const subs = (children.get(folder.id) ?? [])
-      .sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }))
-      .map(build)
-      .filter((n) => n.count > 0 || !state.query); // 검색 중에는 결과가 있는 폴더만
-    return {
-      folder,
-      own,
-      subs,
-      count: own.length + subs.reduce((s, n) => s + n.count, 0),
-      size: own.reduce((s, f) => s + f.size, 0) + subs.reduce((s, n) => s + n.size, 0),
-    };
-  };
-  return build({ id: topId });
-}
-
-function folderTreeView(lib, group, node, colKey, badges, depth) {
-  return h('div', { class: 'tree' },
-    h('ul', { class: 'cards', 'data-col': colKey, 'data-folder': node.folder.id },
-      ...node.own.map((f) => card(lib, group, f, badges)),
-    ),
-    ...node.subs.map((sub) => {
-      const key = `sub:${sub.folder.id}`;
-      const collapsed = state.collapsed.has(key);
-      return h('div', { class: collapsed ? 'subfolder collapsed' : 'subfolder', style: `--depth:${depth}` },
-        h('button', {
-          type: 'button',
-          class: 'subfolder-head',
-          title: sub.folder.path,
-          onclick: () => {
-            if (collapsed) state.collapsed.delete(key);
-            else state.collapsed.add(key);
-            saveCollapsed();
-            renderColumns();
-          },
-        },
-          h('span', { class: 'subfolder-caret' }, collapsed ? '▸' : '▾'),
-          h('span', { class: 'grow' }, `📁 ${sub.folder.name}`),
-          h('span', { class: 'muted small' }, sub.count ? `${sub.count}개 · ${formatSize(sub.size)}` : '0개'),
-        ),
-        !collapsed && folderTreeView(lib, group, sub, colKey, badges, depth + 1),
-      );
-    }),
-  );
-}
-
-function folderLabel(folderId) {
-  if (folderId === state.root.id) return `${state.root.name} (루트)`;
-  const top = state.scan.folders.find((f) => f.id === folderId);
-  if (top) return top.name;
-  return state.scan.allFolders?.find((f) => f.id === folderId)?.path ?? '폴더';
 }
 
 function card(lib, group, f, badges) {
@@ -422,7 +342,7 @@ function card(lib, group, f, badges) {
   const el = h('li', {
     class: `card${compact ? ' compact' : ''}${isConvertible(f) ? ' is-doc' : ''}${state.selected.has(f.id) ? ' selected' : ''}`,
     'data-id': f.id,
-    title: compact ? (f.path ? `${f.path}/${f.name}` : f.name) : null,
+    title: compact ? f.name : null,
     onclick: (e) => {
       if (e.target.closest('button') || Date.now() < suppressClickUntil) return;
       if (state.selectMode) toggleSelected(f.id);
@@ -430,7 +350,7 @@ function card(lib, group, f, badges) {
       else cardMenu(f);
     },
   },
-    ...(compact ? compactRow(f, otherBadges, shownPath(group, f)) : fullCard(f, otherBadges, shownPath(group, f))),
+    ...(compact ? compactRow(f, otherBadges) : fullCard(f, otherBadges)),
   );
   addLongPress(el, () => {
     if (!state.selectMode) setSelectMode(true);
@@ -440,33 +360,20 @@ function card(lib, group, f, badges) {
 }
 
 // 간단히: 한 줄에 분류 색 점 · 파일 이름 · 용량 · ⋯ (줄을 누르면 txt는 리더로 열린다)
-// 경로: 장르(폴더 연결) 탭에서는 칸 제목이 이미 장르 폴더이므로 그 아래 경로만 보여준다
-let inRecent = false; // 최근 읽음 칸을 그리는 중 (트리가 없으므로 경로를 붙인다)
-
-function shownPath(group, f) {
-  if (!f.path) return '';
-  // 장르 탭은 칸 안의 폴더 구조(트리)로 위치가 보이므로 경로를 붙이지 않는다 (최근 읽음 칸은 예외)
-  return group.type === 'folder' && f.folderId && !inRecent ? '' : f.path;
-}
-
-function compactRow(f, otherBadges, path) {
+function compactRow(f, otherBadges) {
   return [
     otherBadges.length > 0 &&
       h('span', { class: 'dots', 'aria-label': otherBadges.map((b) => b.name).join(', ') },
         ...otherBadges.slice(0, 4).map((b) => h('span', { class: 'dot', style: `background:${b.color}`, title: b.name })),
       ),
-    h('span', { class: 'card-name' },
-      path && h('span', { class: 'card-path' }, `${path} › `),
-      f.name,
-    ),
+    h('span', { class: 'card-name' }, f.name),
     h('span', { class: 'card-size muted' }, formatSize(f.size)),
     h('button', { type: 'button', class: 'card-more', 'aria-label': '메뉴', onclick: () => cardMenu(f) }, '⋯'),
   ];
 }
 
-function fullCard(f, otherBadges, path) {
+function fullCard(f, otherBadges) {
   return [
-    path && h('div', { class: 'card-path muted small' }, `📁 ${path}`),
     h('div', { class: 'card-name' }, f.name),
     h('div', { class: 'card-meta muted small' },
       h('span', {}, formatSize(f.size)),
@@ -585,7 +492,6 @@ async function cardMenu(f) {
   const tags = [...(f.folderId ? [badges.get(f.folderId)] : []), ...fileTags(lib, f.id).map((t) => badges.get(t))].filter(Boolean);
   const info = h('div', {},
     h('p', { class: 'muted small' }, `${formatSize(f.size)} · ${formatDate(f.modified)}`),
-    h('p', { class: 'muted small card-location' }, `📁 ${state.root.name}${f.path ? ` / ${f.path.replaceAll('/', ' / ')}` : ''}`),
     tags.length > 0 && h('div', { class: 'badges' }, ...tags.map((b) => h('span', { class: 'badge', style: `--c:${b.color}` }, b.name))),
   );
   const choice = await sheet(f.name, info, [
@@ -627,9 +533,7 @@ async function moveDialog(ids) {
   ]);
   if (!target) return;
   if (group.type === 'folder') {
-    // 이미 그 칸(장르 폴더나 그 하위 폴더)에 있는 파일은 옮기지 않는다
-    const targetKey = target === NONE ? null : target;
-    const files = state.scan.files.filter((f) => ids.includes(f.id) && f.folderId !== targetKey);
+    const files = state.scan.files.filter((f) => ids.includes(f.id));
     await moveItems(files, folderTarget(target));
   } else {
     update(ops.moveInGroup(ids, group.id, null, target));
@@ -690,14 +594,7 @@ function renderRecent(lib, group, badges) {
         h('span', { class: 'grow' }, '🕘 최근 읽음'),
         h('span', { class: 'muted small' }, `${recent.length}개`),
       ),
-      h('ul', { class: 'cards' }, ...(() => {
-        inRecent = true;
-        try {
-          return recent.map((f) => card(lib, group, f, badges));
-        } finally {
-          inRecent = false;
-        }
-      })()),
+      h('ul', { class: 'cards' }, ...recent.map((f) => card(lib, group, f, badges))),
     ),
   );
 }
