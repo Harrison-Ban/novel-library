@@ -602,3 +602,16 @@ main { padding-top: 0; }
 /* 모두 접기/펼치기 */
 .toggle-all { font-size: 13px; white-space: nowrap; padding: 2px 0; }
 .summary-row #scan-status { margin-left: auto; }
+
+/* 태블릿(터치 화면, 폭이 넓어도): 칸을 옆이 아니라 아래로 쌓고, 폭은 최근 읽음과 같게 */
+@media (pointer: coarse) and (min-width: 601px) {
+  .board { flex-direction: column; align-items: stretch; overflow-x: visible; }
+  .board .column { flex: none; max-height: none; width: 100%; max-width: 600px; }
+  .board .cards { overflow-y: visible; }
+  .board .column-head {
+    position: sticky;
+    top: calc(var(--topbar-h, 56px) + var(--boardhead-h, 150px));
+    z-index: 5;
+    background: var(--surface);
+  }
+}
