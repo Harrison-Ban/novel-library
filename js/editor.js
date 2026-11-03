@@ -1,8 +1,8 @@
 // txt 편집: 쓰기, 찾아 바꾸기(모두 바꾸기), 빈 줄 제거, 저장(원본 덮어쓰기)
 // 10MB 파일도 매끄럽도록 보이는 줄만 그리는 CodeMirror 6를 쓰고, 편집할 때만 불러온다.
-// 저장은 UTF-8(BOM)로 원본에 덮어쓰며, 이전 내용은 OneDrive 버전 기록으로 되돌릴 수 있다.
+// 저장은 UTF-8(BOM)로 원본에 덮어쓰며, 이전 내용은 Google Drive 버전 관리로 되돌릴 수 있다.
 // 연 뒤 다른 곳에서 파일이 바뀌었으면 덮어쓰지 않고 새 파일로 저장할지 묻는다.
-import { overwriteText, uploadText, listChildren, isNameConflict } from './graph.js';
+import { overwriteText, uploadText, listChildren, isNameConflict } from './drive.js';
 import { getLibrary, update } from './library.js';
 import { ops, fileTags } from './model.js';
 import { state, toast, sheet, errorMessage } from './state.js';
@@ -238,7 +238,7 @@ export async function openEditor({ file, text, eTag, look, onSaved, onClose }) {
     }
     const ok = await sheet('저장 (원본에 덮어쓰기)', h('div', {},
       h('p', {}, `'${file.name}'에 덮어씁니다. 글자는 UTF-8로 저장됩니다.`),
-      h('p', { class: 'muted small' }, '이전 내용은 OneDrive 웹에서 파일의 "버전 기록"으로 되돌릴 수 있습니다.'),
+      h('p', { class: 'muted small' }, '이전 내용은 Google Drive 웹에서 파일의 "버전 관리"로 되돌릴 수 있습니다.'),
     ), [{ label: '저장', class: 'primary', value: () => true }, { label: '취소' }]);
     if (!ok) return;
     const content = docText();
@@ -261,7 +261,7 @@ export async function openEditor({ file, text, eTag, look, onSaved, onClose }) {
   // 연 뒤에 다른 기기 등에서 원본이 바뀐 경우: 덮어쓰지 않고 새 파일로
   async function saveAsNewFile(content) {
     const choice = await sheet('원본이 그사이 바뀌었습니다', h('p', {},
-      '다른 기기나 OneDrive에서 이 파일이 바뀌어 덮어쓰지 않았습니다. 편집한 내용을 새 파일로 저장할까요?',
+      '다른 기기나 Google Drive에서 이 파일이 바뀌어 덮어쓰지 않았습니다. 편집한 내용을 새 파일로 저장할까요?',
     ), [{ label: '새 파일로 저장', class: 'primary', value: () => true }, { label: '취소 (계속 편집)' }]);
     if (!choice) return;
     const parentId = file.folderId ?? state.root.id;

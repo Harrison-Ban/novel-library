@@ -97,6 +97,15 @@ export const ops = {
     d.rootFolderId = folderId;
   },
 
+  // 폴더 설정: 서재에 올릴 폴더 (소설 폴더 자신의 ID = 바로 안의 파일)
+  setSelectedFolders: (ids) => (d) => {
+    d.selectedFolders = [...new Set(ids)];
+  },
+  selectFolders: (add = [], remove = []) => (d) => {
+    const rm = new Set(remove);
+    d.selectedFolders = [...new Set([...(d.selectedFolders ?? []), ...add])].filter((id) => !rm.has(id));
+  },
+
   // 앱 내 항목 붙이기·떼기
   tag: (fileIds, add = [], remove = []) => (d) => {
     const rm = new Set(remove);
@@ -215,7 +224,7 @@ export const ops = {
     d.log = [...entries, ...(d.log ?? [])].slice(0, 300);
   },
 
-  // OneDrive에서 사라진 파일의 분류 정보 정리
+  // Google Drive에서 사라진 파일의 분류 정보 정리
   forgetFiles: (fileIds) => (d) => {
     for (const id of fileIds) delete d.files[id];
   },

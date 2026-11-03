@@ -4,6 +4,8 @@ import { getLibrary, update } from './library.js';
 import { ops, sortedGroups, groupItems, newId, PALETTE } from './model.js';
 import { h } from './ui.js';
 import { addFolder, renameFolder, removeFolder } from './fileops.js';
+import { refreshScan } from './board.js';
+import { renderFolderSettings } from './folders.js';
 
 function move(list, index, dir) {
   const next = [...list];
@@ -11,6 +13,11 @@ function move(list, index, dir) {
   if (j < 0 || j >= next.length) return next;
   [next[index], next[j]] = [next[j], next[index]];
   return next;
+}
+
+// 칸 이름은 경로(예: 무협/작가A)라서, 이름을 바꿀 때는 마지막 폴더 이름만 쓴다
+function folderLeaf(item) {
+  return state.scan?.allFolders?.find((f) => f.id === item.key)?.name ?? item.name.split('/').pop();
 }
 
 function apply(op) {
@@ -70,14 +77,15 @@ function groupPanel(lib, g, gi, groups) {
           class: 'danger',
           onclick: () => {
             const n = filesWithTag(lib, g.items.map((i) => i.id));
-            if (confirm(`'${g.name}' 그룹을 삭제할까요?\n항목 ${g.items.length}개가 사라지고, 파일 ${n}개에서 이 그룹 분류가 떼어집니다. OneDrive 파일은 그대로입니다.`)) {
+            if (confirm(`'${g.name}' 그룹을 삭제할까요?\n항목 ${g.items.length}개가 사라지고, 파일 ${n}개에서 이 그룹 분류가 떼어집니다. Google Drive 파일은 그대로입니다.`)) {
               apply(ops.deleteGroup(g.id));
             }
           },
         }, '삭제'),
     ),
     isFolder &&
-      h('p', { class: 'muted small' }, '소설 루트 폴더 바로 아래의 하위 폴더가 항목입니다. 항목 추가·이름 변경·삭제는 OneDrive 폴더에 그대로 적용됩니다 (삭제는 빈 폴더만, 휴지통으로).'),
+      h('p', { class: 'muted small' }, '폴더 설정에서 고른 폴더가 항목입니다. 이름 변경·삭제는 Google Drive 폴더에 그대로 적용됩니다 (삭제는 빈 폴더만, 휴지통으로). 새 폴더는 소설 폴더 바로 아래에 만들어집니다.'),
+    isFolder && h('button', { type: 'button', onclick: () => renderFolderSettings() }, '📁 폴더 설정 (올릴 폴더 고르기)'),
     h('ul', { class: 'manage-items' },
       ...items.map((item, i) =>
         h('li', { class: 'manage-row' },
@@ -94,10 +102,12 @@ function groupPanel(lib, g, gi, groups) {
           isFolder
             ? h('input', {
                 class: 'grow name-input',
-                value: item.name,
+                value: folderLeaf(item),
+                title: item.name,
                 'aria-label': '폴더 이름',
                 onchange: async (e) => {
-                  if (!(await renameFolder(item, e.target.value))) e.target.value = item.name;
+                  if (!(await renameFolder({ ...item, name: folderLeaf(item) }, e.target.value))) e.target.value = folderLeaf(item);
+                  else refreshScan(); // 칸 이름(경로)이 바뀌므로 목록을 다시 확인
                   renderManage();
                 },
               })
@@ -127,7 +137,7 @@ function groupPanel(lib, g, gi, groups) {
               class: 'danger',
               onclick: () => {
                 const n = filesWithTag(lib, [item.key]);
-                if (confirm(`'${item.name}' 항목을 삭제할까요?\n이 항목이 붙은 파일 ${n}개에서 분류만 떼어집니다. OneDrive 파일은 그대로입니다.`)) {
+                if (confirm(`'${item.name}' 항목을 삭제할까요?\n이 항목이 붙은 파일 ${n}개에서 분류만 떼어집니다. Google Drive 파일은 그대로입니다.`)) {
                   apply(ops.deleteItem(g.id, item.key));
                 }
               },
@@ -135,7 +145,7 @@ function groupPanel(lib, g, gi, groups) {
         ),
       ),
       !items.length &&
-        h('li', { class: 'muted small' }, isFolder ? (state.scan ? '하위 폴더가 없습니다.' : '파일 목록을 먼저 불러와 주세요.') : '항목이 없습니다.'),
+        h('li', { class: 'muted small' }, isFolder ? (state.scan ? '올린 폴더가 없습니다. 폴더 설정에서 골라 주세요.' : '파일 목록을 먼저 불러와 주세요.') : '항목이 없습니다.'),
     ),
     isFolder &&
       h('button', {

@@ -1,10 +1,11 @@
-// library.json: OneDrive 앱 전용 폴더(Apps 아래)에 두는 분류·설정 파일 (F8)
+// library.json: Google Drive 앱 전용 숨김 공간(appDataFolder)에 두는 분류·설정 파일 (F8)
 //
 // 변경은 "op" 함수(data => void)로 표현한다. 화면에는 바로 반영하고, 잠시 모았다가 저장한다.
-// 저장할 때 다른 기기가 먼저 바꿨으면(eTag 불일치) 다시 불러와 같은 op를 적용해 합친 뒤 저장한다.
-import { graphFetch, graphJson } from './graph.js';
+// 저장할 때 다른 기기가 먼저 바꿨으면(버전 불일치) 다시 불러와 같은 op를 적용해 합친 뒤 저장한다.
+// (아래 eTag 변수에는 Drive 파일의 version을 담는다)
+import { findAppFile, readAppFile, createAppFile, updateAppFile, DriveError } from './drive.js';
 
-const ITEM_PATH = '/me/drive/special/approot:/library.json';
+const FILE_NAME = 'library.json';
 const SAVE_DELAY = 800;
 const MAX_SAVE_ATTEMPTS = 3;
 
@@ -12,7 +13,7 @@ function emptyLibrary() {
   return { version: 1, rootFolderId: null, groups: [], files: {}, updatedAt: null };
 }
 
-let server = emptyLibrary(); // OneDrive에 저장된 내용
+let server = emptyLibrary(); // Google Drive에 저장된 내용
 let eTag = null;
 let local = emptyLibrary(); // server + 아직 저장되지 않은 변경
 const pending = [];
@@ -56,7 +57,7 @@ function applyOps(data, ops) {
 }
 
 // 마지막으로 받은 library.json을 기기에 저장해 두고, 다음에 앱을 열 때 바로 쓴다
-const CACHE_KEY = 'nl.library';
+const CACHE_KEY = 'nl.g.library';
 
 function setServer(data, tag) {
   server = data;
@@ -93,21 +94,14 @@ function rebuildLocal() {
   applyOps(local, pending);
 }
 
-// OneDrive의 최신 library.json. 내가 가진 것과 같으면 null
+// Google Drive의 최신 library.json. 내가 가진 것과 같으면 null
 async function fetchRemote() {
-  let meta;
-  try {
-    meta = await graphJson(ITEM_PATH);
-  } catch (e) {
-    if (e.status !== 404) throw e;
-    return eTag === null ? { data: emptyLibrary(), eTag: null } : null;
-  }
-  if (meta.eTag === eTag) return null;
-  const res = await fetch(meta['@microsoft.graph.downloadUrl'], { cache: 'no-store' });
-  if (!res.ok) throw new Error(`library.json을 받지 못했습니다 (${res.status})`);
+  const meta = await findAppFile(FILE_NAME);
+  if (!meta) return eTag === null ? { data: emptyLibrary(), eTag: null } : null;
+  if (meta.version === eTag) return null;
   // 내용이 깨져 있으면 덮어쓰지 않도록 여기서 멈춘다
-  const data = { ...emptyLibrary(), ...JSON.parse(await res.text()) };
-  return { data, eTag: meta.eTag };
+  const data = { ...emptyLibrary(), ...JSON.parse(await readAppFile(meta.id)) };
+  return { data, eTag: meta.version };
 }
 
 export async function loadLibrary() {
@@ -175,23 +169,21 @@ export async function flush() {
   if (pending.length && status !== 'error') return flush();
 }
 
+const versionMismatch = () => new DriveError(412, '', '다른 기기가 먼저 저장했습니다');
+
 async function persist(ops) {
   let merged = false;
   for (let attempt = 1; ; attempt++) {
     const next = structuredClone(server);
     applyOps(next, ops);
     next.updatedAt = new Date().toISOString();
+    const text = JSON.stringify(next, null, 2);
     try {
-      const res = await graphFetch(`${ITEM_PATH}:/content`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(eTag ? { 'If-Match': eTag } : { 'If-None-Match': '*' }),
-        },
-        body: JSON.stringify(next, null, 2),
-      });
-      const saved = await res.json();
-      setServer(next, saved.eTag);
+      // 저장 직전에 버전을 비교한다 (파일이 아직 없으면 새로 만든다)
+      const current = await findAppFile(FILE_NAME);
+      if (current && current.version !== eTag) throw versionMismatch();
+      const saved = current ? await updateAppFile(current.id, text) : await createAppFile(FILE_NAME, text);
+      setServer(next, saved.version);
       rebuildLocal();
       if (merged) emit('data');
       return;

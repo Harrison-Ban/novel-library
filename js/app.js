@@ -1,12 +1,13 @@
 import { CONFIG } from './config.js';
-import { initAuth, getAccount, login, logout, redirectUri } from './auth.js';
-import { listChildren, getItem, onThrottle } from './graph.js';
-import { loadLibrary, getLibrary, update, commit, flush, checkRemote, onLibraryChange, getSyncStatus, loadCachedLibrary, refreshLibrary, clearLibraryCache } from './library.js';
-import { clearCache, isDoc } from './scan.js';
+import { initAuth, getAccount, setAccount, login, logout } from './auth.js';
+import { getItem, getAbout, findFoldersNamed, onThrottle } from './drive.js';
+import { loadLibrary, getLibrary, update, flush, checkRemote, onLibraryChange, getSyncStatus, loadCachedLibrary, refreshLibrary, clearLibraryCache } from './library.js';
+import { clearCache } from './scan.js';
 import { ops } from './model.js';
-import { state, render, toast, renderError, isDialogOpen, writePref } from './state.js';
+import { state, render, toast, renderError, isDialogOpen, writePref, errorMessage } from './state.js';
 import { showBoard, renderBoard, refreshScan } from './board.js';
 import { renderManage } from './manage.js';
+import { renderFolderSettings } from './folders.js';
 import { h, formatDateTime } from './ui.js';
 import { setupPwa, canInstall, promptInstall, isStandalone } from './pwa.js';
 
@@ -21,6 +22,7 @@ async function start() {
     isBusy: () => getSyncStatus().status !== 'saved' || !!document.querySelector('.reader, dialog[open]'),
     beforeReload: () => flush(),
   });
+  forgetOneDriveData();
   if (!CONFIG.clientId) return renderNeedsConfig();
   try {
     await initAuth();
@@ -28,15 +30,34 @@ async function start() {
     return renderError(e, () => location.reload());
   }
   if (!getAccount()) return renderLogin();
+  await enterApp();
+}
 
+let entered = false;
+async function enterApp() {
+  if (entered) return;
+  entered = true;
   nav.hidden = false;
-  onThrottle((sec) => toast(`OneDrive 요청이 많아 ${sec}초 기다렸다 다시 시도합니다…`));
+  onThrottle((sec) => toast(`Google Drive 요청이 많아 ${sec}초 기다렸다 다시 시도합니다…`));
   startSync();
   await openLibrary();
 }
 
+// OneDrive를 쓰던 때 이 기기에 남은 목록·설정·로그인 정보를 지운다 (한 번만)
+function forgetOneDriveData() {
+  try {
+    if (localStorage.getItem('nl.g.migrated')) return;
+    for (const key of Object.keys(localStorage)) {
+      if (['nl.library', 'nl.scan', 'nl.root'].includes(key) || key.startsWith('msal.') || key.includes('login.windows.net') || key.includes('login.microsoftonline.com')) {
+        localStorage.removeItem(key);
+      }
+    }
+    localStorage.setItem('nl.g.migrated', '1');
+  } catch {}
+}
+
 // 소설 폴더 정보도 기기에 저장해 두고 다음 시작 때 바로 쓴다
-const ROOT_CACHE_KEY = 'nl.root';
+const ROOT_CACHE_KEY = 'nl.g.root';
 function readRootCache() {
   try {
     return JSON.parse(localStorage.getItem(ROOT_CACHE_KEY));
@@ -49,38 +70,42 @@ function setRoot(root) {
   writePref(ROOT_CACHE_KEY, JSON.stringify(root));
 }
 
+// 고정된 소설 폴더: '문서' 폴더 안의 '소설' 폴더 (내 드라이브든 PC 백업 폴더든 찾는다)
+async function findNovelRoot() {
+  for (const folder of await findFoldersNamed(CONFIG.rootName)) {
+    for (const parentId of folder.parents) {
+      const parent = await getItem(parentId).catch(() => null);
+      if (parent && !parent.trashed && CONFIG.rootParentNames.includes(parent.name)) {
+        return { id: folder.id, name: folder.name, path: `${parent.name}/${folder.name}` };
+      }
+    }
+  }
+  return null;
+}
+
 // 저장본이 있으면 서재를 바로 보여주고, 최신 설정과 폴더 정보는 뒤에서 받아 반영한다
 async function openLibrary() {
   const cachedRoot = readRootCache();
-  if (!state.root && loadCachedLibrary() && cachedRoot && getLibrary().rootFolderId === cachedRoot.id) {
+  if (!state.root && cachedRoot && loadCachedLibrary() && getLibrary().selectedFolders) {
     state.root = cachedRoot;
     showBoard();
-    refreshInBackground(cachedRoot.id);
+    refreshInBackground(cachedRoot);
     return;
   }
   await openLibraryFresh();
 }
 
-async function refreshInBackground(rootId) {
+async function refreshInBackground(root) {
   try {
     await refreshLibrary();
     if (!getLibrary().groups.length) update(ops.initDefaults());
-    const newRootId = getLibrary().rootFolderId;
-    if (newRootId !== rootId) {
-      // 다른 기기에서 소설 폴더를 바꿨다
-      state.root = null;
-      return openLibraryFresh();
-    }
-    const item = await getItem(rootId);
-    const root = { id: item.id, name: item.name, path: rootPath(item) };
-    if (root.name !== state.root?.name || root.path !== state.root?.path) {
-      setRoot(root);
-      if (state.view === 'board') renderBoard();
-    } else setRoot(root);
+    const item = await getItem(root.id);
+    if (item.trashed) throw Object.assign(new Error('소설 폴더가 휴지통에 있습니다'), { status: 404 });
+    if (getLibrary().rootFolderId !== root.id) update(ops.setRoot(root.id));
   } catch (e) {
     if (e.status === 404) {
-      toast('지정했던 소설 루트 폴더를 찾을 수 없습니다. 다시 골라 주세요.');
-      return renderPicker();
+      state.root = null;
+      return openLibraryFresh();
     }
     console.warn('설정 새로 받기 실패', e);
   }
@@ -90,33 +115,32 @@ async function openLibraryFresh() {
   render(h('p', { class: 'muted center' }, '설정을 불러오는 중…'));
   try {
     await loadLibrary();
-  } catch (e) {
-    return renderError(e, openLibraryFresh);
-  }
-  if (!getLibrary().groups.length) update(ops.initDefaults());
-  const rootId = getLibrary().rootFolderId;
-  if (!rootId) return renderPicker();
-  try {
-    const item = await getItem(rootId);
-    setRoot({ id: item.id, name: item.name, path: rootPath(item) });
-  } catch (e) {
-    if (e.status === 404) {
-      toast('지정했던 소설 루트 폴더를 찾을 수 없습니다. 다시 골라 주세요.');
-      return renderPicker();
+    if (!getLibrary().groups.length) update(ops.initDefaults());
+    const root = await findNovelRoot();
+    if (!root) return renderNoRoot();
+    if (root.id !== state.root?.id) {
+      clearCache();
+      state.scan = null;
     }
+    setRoot(root);
+    if (getLibrary().rootFolderId !== root.id) update(ops.setRoot(root.id));
+  } catch (e) {
     return renderError(e, openLibraryFresh);
   }
+  if (!getLibrary().selectedFolders) return renderFolderSettings({ first: true });
   showBoard();
 }
 
-function rootPath(item) {
-  const raw = item.parentReference?.path;
-  if (!raw) return '/';
-  let parent = raw.replace(/^\/drive\/root:?/, '');
-  try {
-    parent = decodeURIComponent(parent);
-  } catch {}
-  return `${parent}/${item.name}`;
+function renderNoRoot() {
+  state.view = 'noroot';
+  render(
+    h('section', { class: 'panel' },
+      h('h2', {}, '소설 폴더를 찾지 못했습니다'),
+      h('p', {}, `Google Drive에서 '${CONFIG.rootParentNames[0]}' 폴더 안의 '${CONFIG.rootName}' 폴더를 찾지 못했습니다.`),
+      h('p', { class: 'muted' }, `Google Drive에 '${CONFIG.rootParentNames[0]} › ${CONFIG.rootName}' 폴더가 있는지, 휴지통에 있지 않은지 확인한 뒤 다시 시도해 주세요. PC의 문서 폴더를 Google Drive로 백업했다면 백업(동기화)이 끝난 뒤에 보입니다.`),
+      h('div', { class: 'row' }, h('button', { class: 'primary', onclick: openLibraryFresh }, '다시 찾기')),
+    ),
+  );
 }
 
 // ---------- 동기화 (F8) ----------
@@ -151,6 +175,9 @@ function startSync() {
 }
 
 function rerenderCurrent() {
+  // 다른 기기에서 폴더 설정을 바꿨으면 목록을 새로 받는다
+  const selected = getLibrary().selectedFolders ?? [];
+  if (state.scan && state.root && String(selected) !== String(state.scan.selected ?? [])) refreshScan();
   if (isDialogOpen()) return;
   if (state.view === 'board') renderBoard();
   if (state.view === 'manage') renderManage();
@@ -161,83 +188,33 @@ function rerenderCurrent() {
 function renderNeedsConfig() {
   render(
     h('section', { class: 'panel' },
-      h('h2', {}, 'Azure 앱 등록이 필요합니다'),
-      h('p', {}, '아직 클라이언트 ID가 설정되지 않았습니다. docs/SETUP.md의 순서대로 Azure 앱을 등록한 뒤, 클라이언트 ID를 Claude에게 알려 주세요.'),
-      h('p', { class: 'muted' }, '이 주소를 리디렉션 URI로 등록해야 합니다:'),
-      h('code', { class: 'block' }, redirectUri),
+      h('h2', {}, 'Google 로그인 설정이 필요합니다'),
+      h('p', {}, '아직 Google 클라이언트 ID가 설정되지 않았습니다. docs/SETUP.md의 순서대로 Google Cloud에서 클라이언트 ID를 만든 뒤 Claude에게 알려 주세요.'),
+      h('p', { class: 'muted' }, '"승인된 JavaScript 원본"에 이 주소를 등록해야 합니다:'),
+      h('code', { class: 'block' }, location.origin),
     ),
   );
 }
 
 function renderLogin() {
+  const error = h('p', { class: 'muted small' });
   render(
     h('section', { class: 'panel center' },
-      h('h2', {}, 'OneDrive 소설 서재'),
-      h('p', { class: 'muted' }, 'Microsoft 개인 계정으로 로그인하면 OneDrive의 소설 파일 목록을 볼 수 있습니다.'),
-      h('button', { class: 'primary', onclick: () => login().catch((e) => renderError(e)) }, 'Microsoft 계정으로 로그인'),
+      h('h2', {}, '소설 서재'),
+      h('p', { class: 'muted' }, 'Google 계정으로 로그인하면 Google Drive의 문서 › 소설 폴더에 있는 소설 파일 목록을 볼 수 있습니다.'),
+      h('button', {
+        class: 'primary',
+        // 로그인 창은 버튼을 누른 순간에 열어야 막히지 않는다
+        onclick: () => login()
+          .then(async () => {
+            setAccount(await getAbout());
+            await enterApp();
+          })
+          .catch((e) => (error.textContent = errorMessage(e))),
+      }, 'Google 계정으로 로그인'),
+      error,
     ),
   );
-}
-
-// ---------- F2: 루트 폴더 지정 ----------
-
-async function renderPicker(stack = [{ id: 'root', name: '내 파일' }]) {
-  state.view = 'picker';
-  const current = stack[stack.length - 1];
-  render(h('p', { class: 'muted center' }, `${current.name} 여는 중…`));
-  let children;
-  try {
-    children = await listChildren(current.id);
-  } catch (e) {
-    return renderError(e, () => renderPicker(stack));
-  }
-  const folders = children.filter((i) => i.folder).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-  const docCount = children.filter(isDoc).length;
-
-  const crumbs = stack.map((s, i) =>
-    i === stack.length - 1
-      ? h('span', {}, s.name)
-      : h('button', { class: 'link', onclick: () => renderPicker(stack.slice(0, i + 1)) }, s.name),
-  );
-
-  render(
-    h('section', { class: 'panel' },
-      h('h2', {}, '소설 루트 폴더 고르기'),
-      h('p', { class: 'muted' }, '소설이 들어 있는 폴더로 들어간 뒤 아래 버튼을 누르세요. 이 폴더 바로 아래의 하위 폴더가 장르 칸이 됩니다.'),
-      h('nav', { class: 'crumbs' }, ...crumbs.flatMap((c, i) => (i ? [h('span', { class: 'sep' }, '›'), c] : [c]))),
-      h('ul', { class: 'folder-list' },
-        folders.length
-          ? folders.map((f) =>
-              h('li', {},
-                h('button', { class: 'folder', onclick: () => renderPicker([...stack, { id: f.id, name: f.name }]) },
-                  h('span', { class: 'icon' }, '📁'),
-                  h('span', { class: 'grow' }, f.name),
-                  h('span', { class: 'muted' }, `${f.folder.childCount ?? 0}개 ›`),
-                ),
-              ),
-            )
-          : h('li', { class: 'muted' }, '하위 폴더가 없습니다.'),
-      ),
-      h('p', { class: 'muted' }, `이 폴더에 바로 있는 txt·doc·docx 파일: ${docCount}개`),
-      h('div', { class: 'row' },
-        h('button', { class: 'primary', onclick: () => chooseRoot(current) }, `'${current.name}'을(를) 소설 루트로 지정`),
-        state.root && h('button', { onclick: showBoard }, '취소'),
-      ),
-    ),
-  );
-}
-
-async function chooseRoot(folder) {
-  render(h('p', { class: 'muted center' }, '저장하는 중…'));
-  try {
-    const id = folder.id === 'root' ? (await getItem('root')).id : folder.id;
-    await commit(ops.setRoot(id));
-    clearCache();
-    state.scan = null;
-    await openLibrary();
-  } catch (e) {
-    renderError(e, () => renderPicker());
-  }
 }
 
 // ---------- 설정 ----------
@@ -251,11 +228,11 @@ async function renderSettings() {
       h('h2', {}, '설정'),
       h('h3', {}, '계정'),
       h('p', {}, account?.name || ''),
-      h('p', { class: 'muted small' }, account?.username || ''),
-      h('h3', {}, '소설 루트 폴더'),
-      h('p', {}, state.root ? state.root.path : '지정되지 않음'),
+      h('p', { class: 'muted small' }, account?.email || ''),
+      h('h3', {}, '소설 폴더 (고정)'),
+      h('p', {}, state.root ? `Google Drive › ${state.root.path.replace(/\//g, ' › ')}` : '찾지 못함'),
       h('div', { class: 'row' },
-        h('button', { onclick: () => renderPicker() }, '루트 폴더 바꾸기'),
+        state.root && h('button', { class: 'primary', onclick: () => renderFolderSettings() }, '📁 폴더 설정'),
         h('button', { onclick: renderLog }, '작업 기록'),
         h('button', {
           class: 'danger',
@@ -267,6 +244,7 @@ async function renderSettings() {
               localStorage.removeItem(ROOT_CACHE_KEY);
             } catch {}
             logout();
+            location.reload();
           }),
         }, '로그아웃'),
       ),
@@ -327,7 +305,7 @@ function renderLog() {
   render(
     h('section', { class: 'panel' },
       h('h2', {}, '작업 기록'),
-      h('p', { class: 'muted small' }, '최근 파일·폴더 변경 300개까지 보관합니다. 휴지통으로 보낸 항목은 OneDrive 휴지통에서 복원할 수 있습니다.'),
+      h('p', { class: 'muted small' }, '최근 파일·폴더 변경 300개까지 보관합니다. 휴지통으로 보낸 항목은 30일 안에 Google Drive 휴지통에서 복원할 수 있습니다.'),
       log.length
         ? h('ul', { class: 'log-list' },
             ...log.map((e) =>

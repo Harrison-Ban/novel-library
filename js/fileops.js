@@ -1,6 +1,6 @@
-// 실제 OneDrive 파일·폴더를 바꾸는 작업 (F10~F13)
+// 실제 Google Drive 파일·폴더를 바꾸는 작업 (F10~F13)
 // 원칙: 확인 후 실행, 덮어쓰기 없음(같은 이름이면 (1) 붙이기 또는 건너뛰기), 삭제는 휴지통으로만.
-import { listChildren, moveItem, renameItem, createFolder, deleteItem, getFolderInfo, isNameConflict } from './graph.js';
+import { listChildren, moveItem, renameItem, createFolder, trashItem, hasChildren, isNameConflict } from './drive.js';
 import { update } from './library.js';
 import { saveCache } from './scan.js';
 import { ops } from './model.js';
@@ -45,7 +45,9 @@ function scanFolderKey(folderId) {
 
 export function folderNameOf(folderId) {
   if (folderId === state.root.id) return `${state.root.name} (루트)`;
-  return state.scan?.folders.find((f) => f.id === folderId)?.name ?? '폴더';
+  return state.scan?.folders.find((f) => f.id === folderId)?.name
+    ?? state.scan?.allFolders?.find((f) => f.id === folderId)?.path
+    ?? '폴더';
 }
 
 const parentOf = (f) => f.folderId ?? state.root.id;
@@ -189,7 +191,7 @@ export async function trashFiles(files, title = '휴지통으로 보내기') {
   if (!files.length) return 0;
   const size = files.reduce((s, f) => s + f.size, 0);
   const ok = await sheet(title, h('div', {},
-    h('p', {}, `${files.length}개 · ${formatSize(size)}을(를) OneDrive 휴지통으로 보냅니다. 휴지통에서 복원할 수 있습니다.`),
+    h('p', {}, `${files.length}개 · ${formatSize(size)}을(를) Google Drive 휴지통으로 보냅니다. 30일 안에 휴지통에서 복원할 수 있습니다.`),
     fileList(files),
   ), [{ label: `${files.length}개 휴지통으로`, class: 'primary danger-fill', value: () => true }, { label: '취소' }]);
   if (!ok) return 0;
@@ -199,7 +201,7 @@ export async function trashFiles(files, title = '휴지통으로 보내기') {
   for (const [i, f] of files.entries()) {
     showProgress(`휴지통으로 보내는 중 ${i + 1}/${files.length}`);
     try {
-      await deleteItem(f.id);
+      await trashItem(f.id);
       removed.push(f);
     } catch (e) {
       if (e.status === 404) removed.push(f); // 이미 없음
@@ -230,8 +232,11 @@ export async function addFolder() {
   showProgress('폴더 만드는 중…');
   try {
     const folder = await createFolder(state.root.id, name);
-    state.scan?.folders.push({ id: folder.id, name: folder.name });
+    // 새 폴더는 바로 서재에 올린다
+    update(ops.selectFolders([folder.id]));
+    state.scan?.folders.push({ id: folder.id, name: folder.name, path: folder.name });
     state.scan?.folders.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    state.scan?.allFolders?.push({ id: folder.id, name: folder.name, parentId: state.root.id, path: folder.name, depth: 0 });
     commitScan();
     logEntries([{ action: 'mkdir', name: folder.name, detail: `${state.root.name}에 폴더 생성` }]);
     toast(`'${folder.name}' 폴더를 만들었습니다`);
@@ -251,11 +256,11 @@ export async function renameFolder(folder, name) {
     toast('이름에 \\ / : * ? " < > | 는 쓸 수 없습니다');
     return false;
   }
-  if (!confirm(`OneDrive 폴더 '${folder.name}'의 이름을 '${name}'(으)로 바꿀까요?`)) return false;
+  if (!confirm(`Google Drive 폴더 '${folder.name}'의 이름을 '${name}'(으)로 바꿀까요?`)) return false;
   showProgress('폴더 이름 바꾸는 중…');
   try {
     await renameItem(folder.key, name);
-    const f = state.scan?.folders.find((x) => x.id === folder.key);
+    const f = state.scan?.allFolders?.find((x) => x.id === folder.key);
     if (f) f.name = name;
     commitScan();
     logEntries([{ action: 'rename', name, detail: `폴더 ${folder.name} → ${name}` }]);
@@ -295,22 +300,26 @@ export async function removeFolder(folder) {
     await moveItems(items, target);
   }
 
-  let info;
+  let notEmpty;
   try {
-    info = await getFolderInfo(folder.key);
+    notEmpty = await hasChildren(folder.key);
   } catch (e) {
     toast(`폴더를 확인하지 못했습니다: ${errorMessage(e)}`);
     return false;
   }
-  if ((info.folder?.childCount ?? 0) > 0) {
+  if (notEmpty) {
     toast('폴더가 아직 비어 있지 않아 삭제하지 않았습니다');
     return false;
   }
-  if (!children.length && !confirm(`빈 폴더 '${folder.name}'을(를) OneDrive 휴지통으로 보낼까요?`)) return false;
+  if (!children.length && !confirm(`빈 폴더 '${folder.name}'을(를) Google Drive 휴지통으로 보낼까요?`)) return false;
   showProgress('폴더 삭제 중…');
   try {
-    await deleteItem(folder.key);
-    if (state.scan) state.scan.folders = state.scan.folders.filter((f) => f.id !== folder.key);
+    await trashItem(folder.key);
+    update(ops.selectFolders([], [folder.key]));
+    if (state.scan) {
+      state.scan.folders = state.scan.folders.filter((f) => f.id !== folder.key);
+      if (state.scan.allFolders) state.scan.allFolders = state.scan.allFolders.filter((f) => f.id !== folder.key);
+    }
     commitScan();
     logEntries([{ action: 'rmdir', name: folder.name, detail: '빈 폴더를 휴지통으로' }]);
     toast(`'${folder.name}' 폴더를 휴지통으로 보냈습니다`);
@@ -327,7 +336,7 @@ export async function removeFolder(folder) {
 
 export function pickFolder(title) {
   return new Promise((resolve) => {
-    let stack = [{ id: 'root', name: '내 파일' }, { id: state.root.id, name: state.root.name }];
+    let stack = [{ id: 'root', name: '내 드라이브' }, { id: state.root.id, name: state.root.name }];
     let result = null;
     const body = h('div', { class: 'picker-body' });
     const chooseBtn = h('button', { type: 'button', class: 'primary', onclick: () => {

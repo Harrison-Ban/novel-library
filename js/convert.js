@@ -1,7 +1,7 @@
 // doc·docx → UTF-8 txt 변환 (F14)
 // docx: 브라우저에서 바로 텍스트 추출(mammoth.js)
-// doc: OneDrive에서 PDF로 변환해 받은 뒤 텍스트 추출(pdf.js) — 서식은 사라지고 글자만 남는다
-import { downloadFile, downloadAsPdf, uploadText, deleteItem, listChildren, isNameConflict } from './graph.js';
+// doc: Google Drive에서 Google 문서로 임시 변환해 글자만 받는다 — 서식은 사라지고 글자만 남는다
+import { downloadFile, docToPlainText, uploadText, trashItem, listChildren, isNameConflict } from './drive.js';
 import { getLibrary, update } from './library.js';
 import { ops, fileTags } from './model.js';
 import { showProgress, askConflict, uniqueName, logEntries, commitScan, folderNameOf } from './fileops.js';
@@ -25,35 +25,13 @@ function loadMammoth() {
   return mammothLoading;
 }
 
-let pdfLoading = null;
-function loadPdfJs() {
-  pdfLoading ??= import('../vendor/pdfjs/pdf.min.js').then((pdfjs) => {
-    pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.min.js', import.meta.url).href;
-    return pdfjs;
-  }).catch((e) => {
-    pdfLoading = null;
-    throw e;
-  });
-  return pdfLoading;
-}
-
 async function docxToText(file) {
   const [mammoth, blob] = await Promise.all([loadMammoth(), downloadFile(file.id)]);
   const result = await mammoth.extractRawText({ arrayBuffer: await blob.arrayBuffer() });
   return result.value;
 }
 
-async function docToText(file) {
-  const [pdfjs, data] = await Promise.all([loadPdfJs(), downloadAsPdf(file.id)]);
-  const pdf = await pdfjs.getDocument({ data: new Uint8Array(data) }).promise;
-  const pages = [];
-  for (let n = 1; n <= pdf.numPages; n++) {
-    const content = await (await pdf.getPage(n)).getTextContent();
-    pages.push(content.items.map((it) => (it.str ?? '') + (it.hasEOL ? '\n' : '')).join(''));
-  }
-  await pdf.destroy();
-  return pages.join('\n\n');
-}
+const docToText = (file) => docToPlainText(file.id, file.name);
 
 const toTxtName = (name) => name.replace(/\.docx?$/i, '.txt');
 
@@ -66,7 +44,7 @@ export async function convertFiles(files) {
   const size = docs.reduce((s, f) => s + f.size, 0);
   const mode = await sheet(`${docs.length}개를 txt로 변환`, h('div', {},
     h('p', {}, `같은 폴더에 같은 이름의 .txt(UTF-8)로 저장합니다. 서식은 사라지고 글자만 남습니다. (${formatSize(size)})`),
-    h('p', { class: 'muted small' }, '원본에 붙은 분류는 새 txt로 넘어갑니다. 구형 doc은 OneDrive에서 PDF로 바꾼 뒤 글자를 뽑습니다.'),
+    h('p', { class: 'muted small' }, '원본에 붙은 분류는 새 txt로 넘어갑니다. 구형 doc은 Google Drive에서 잠시 Google 문서로 바꿔 글자를 뽑습니다 (임시 복사본은 휴지통으로).'),
     h('ul', { class: 'confirm-list' }, ...docs.map((f) => h('li', {}, f.name))),
   ), [
     { label: '변환 (원본 유지)', class: 'primary', value: () => 'keep' },
@@ -124,7 +102,7 @@ export async function convertFiles(files) {
       log.push({ action: 'convert', name: item.name, detail: `${f.name} → txt (${folderNameOf(parentId)})` });
 
       if (mode === 'trash') {
-        await deleteItem(f.id);
+        await trashItem(f.id);
         if (state.scan) state.scan.files = state.scan.files.filter((x) => x.id !== f.id);
         update(ops.forgetFiles([f.id]));
         log.push({ action: 'delete', name: f.name, detail: '변환 후 원본을 휴지통으로' });

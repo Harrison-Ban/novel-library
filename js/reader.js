@@ -2,7 +2,7 @@
 // 본문은 이 기기 화면에만 표시하며 다른 곳으로 보내지 않는다. 읽기 전용(복사만 허용).
 import { getLibrary, update, flush, onLibraryChange } from './library.js';
 import { ops, fileTags } from './model.js';
-import { openDownloadWithMeta } from './graph.js';
+import { openDownloadWithMeta } from './drive.js';
 import { detectEncoding, decodeAll, ENCODINGS } from './encoding.js';
 import { sheet, toast, errorMessage, writePref } from './state.js';
 import { createFind } from './reader-find.js';

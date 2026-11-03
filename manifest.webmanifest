@@ -1,7 +1,7 @@
 {
   "name": "소설 서재",
   "short_name": "소설 서재",
-  "description": "OneDrive 소설 파일 분류·정리·읽기",
+  "description": "Google Drive 소설 파일 분류·정리·읽기",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",

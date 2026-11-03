@@ -1,6 +1,6 @@
 # 소설 서재 (novel-library)
 
-OneDrive의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요구사항은 [PRD.md](PRD.md)와 [docs/VIEWER-PRD.md](docs/VIEWER-PRD.md), 작업 규칙은 [CLAUDE.md](CLAUDE.md), 처음 설정은 [docs/SETUP.md](docs/SETUP.md)를 본다.
+Google Drive(문서 › 소설)의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요구사항은 [PRD.md](PRD.md)와 [docs/VIEWER-PRD.md](docs/VIEWER-PRD.md), 작업 규칙은 [CLAUDE.md](CLAUDE.md), 처음 설정은 [docs/SETUP.md](docs/SETUP.md)를 본다.
 
 - 서버 없는 정적 웹앱, 빌드 과정 없음
 - `main` 브랜치에 푸시하면 GitHub Actions가 GitHub Pages로 배포한다
@@ -18,19 +18,20 @@ OneDrive의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요
 python3 -m http.server 8080
 ```
 
-브라우저에서 http://localhost:8080/ 을 연다. 이 주소도 Azure 리디렉션 URI에 등록되어 있어야 로그인된다.
+브라우저에서 http://localhost:8080/ 을 연다. `http://localhost:8080`도 Google 클라이언트의 "승인된 JavaScript 원본"에 등록되어 있어야 로그인된다.
 
 ## 구조
 
 | 파일 | 역할 |
 |---|---|
 | `index.html`, `css/app.css` | 화면 |
-| `js/config.js` | Azure 클라이언트 ID, 권한 |
-| `js/auth.js` | 로그인·토큰 갱신 (MSAL) |
-| `js/graph.js` | Microsoft Graph 호출, 429 재시도 |
-| `js/library.js` | OneDrive 앱 폴더의 `library.json` 읽기·저장, 모아서 저장, eTag 충돌 시 다시 불러와 합치기 |
+| `js/config.js` | Google 클라이언트 ID, 권한, 고정 소설 폴더 이름(문서/소설) |
+| `js/auth.js` | Google 로그인(GIS 토큰 방식), 만료 시 '다시 연결' |
+| `js/drive.js` | Google Drive API 호출, 재시도, 같은 이름 확인, 앱 전용 공간 |
+| `js/folders.js` | 폴더 설정: 소설 폴더 아래 폴더 트리, 올릴 폴더 고르기 |
+| `js/library.js` | Drive 앱 전용 공간의 `library.json` 읽기·저장, 모아서 저장, 버전 충돌 시 다시 불러와 합치기 |
 | `js/model.js` | 분류 그룹·항목·파일 태그와 변경 op |
-| `js/scan.js` | 루트·하위 폴더의 txt·doc·docx 목록, 기기 캐시 |
+| `js/scan.js` | 소설 폴더 아래 폴더 구조, 고른 폴더의 txt·doc·docx 목록, 기기 캐시 |
 | `js/state.js` | 화면 상태, 알림, 대화상자 |
 | `js/board.js` | 보드(칸·카드), 드래그, 선택 모드, 필터·검색·정렬 |
 | `js/manage.js` | 분류 관리 화면 |
@@ -38,10 +39,10 @@ python3 -m http.server 8080
 | `js/reader.js` | txt 리더: 나눠 불러오기, 보기 설정, 스크롤·페이지 모드, 읽던 위치 |
 | `js/reader-find.js` | 리더 단어 찾기 (강조, 3/15 건수, 이전·다음) |
 | `js/reader-bookmarks.js` | 리더 책갈피 (추가·이동·삭제, library.json 공유) |
-| `js/editor.js` | txt 편집: 쓰기, 찾아 바꾸기, 빈 줄 제거, 원본 덮어쓰기 저장(eTag 확인, UTF-8 BOM) |
+| `js/editor.js` | txt 편집: 쓰기, 찾아 바꾸기, 빈 줄 제거, 원본 덮어쓰기 저장(내용 버전 확인, UTF-8 BOM) |
 | `js/encoding.js` | UTF-8·EUC-KR(CP949)·UTF-16 자동 판별 |
 | `js/convert.js` | doc·docx → UTF-8 txt 변환 |
-| `js/app.js` | 시작·로그인·루트 폴더 지정·설정, 동기화 표시 |
+| `js/app.js` | 시작·로그인·소설 폴더 찾기·설정, 동기화 표시 |
 | `js/pwa.js` | 앱 설치, 새 버전 자동 적용·새로고침 알림 |
 | `sw.js` | 서비스 워커: 앱 파일을 기기에 저장, 배포마다 버전 교체 (배포 때 버전·파일 목록 자동 기입) |
 | `manifest.webmanifest`, `icons/` | 홈 화면 설치 정보와 아이콘 |

@@ -1,5 +1,5 @@
 // 서비스 워커: 앱 파일을 기기에 저장해 빨리 열고, 배포마다 새 버전으로 바꾼다 (F15)
-// OneDrive·로그인 요청(다른 주소)과 version.json은 저장하지 않고 항상 네트워크로 보낸다.
+// Google Drive·로그인 요청(다른 주소)과 version.json은 저장하지 않고 항상 네트워크로 보낸다.
 const BUILD = 'dev';
 const CACHE = `novel-library-${BUILD}`;
 // 배포할 때 GitHub Actions가 실제 파일 목록으로 바꾼다

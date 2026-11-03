@@ -1,48 +1,72 @@
-// F3: 루트 폴더와 그 바로 아래 하위 폴더의 txt·doc·docx 목록 (이름·용량·수정일만, 본문은 읽지 않음)
-import { listChildren } from './graph.js';
+// F3: 소설 폴더 아래 폴더 구조 전체와, 폴더 설정에서 고른 폴더의 txt·doc·docx 목록
+// (이름·용량·수정일만 다루고, 본문은 읽지 않음)
+import { listAllFolders, listFilesIn } from './drive.js';
 
 const DOC_EXT = /\.(txt|doc|docx)$/i;
-const CACHE_KEY = 'nl.scan';
-const CONCURRENCY = 4;
+const CACHE_KEY = 'nl.g.scan';
 
 export const isDoc = (item) => item.file && DOC_EXT.test(item.name);
 
-function toFile(item, folderId) {
-  return {
-    id: item.id,
-    name: item.name,
-    size: item.size ?? 0,
-    modified: item.lastModifiedDateTime,
-    folderId, // null = 루트 바로 아래(미분류)
-  };
-}
+const byPath = (a, b) => a.path.localeCompare(b.path, 'ko', { numeric: true });
 
-export async function scanRoot(rootId, onProgress) {
-  const rootChildren = await listChildren(rootId);
-  const folders = rootChildren
-    .filter((i) => i.folder)
-    .map((f) => ({ id: f.id, name: f.name }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-  const files = rootChildren.filter(isDoc).map((f) => toFile(f, null));
-  let nestedFolderCount = 0;
-  let done = 0;
-  onProgress?.(done, folders.length);
-
-  const queue = [...folders];
-  async function worker() {
-    while (queue.length) {
-      const folder = queue.shift();
-      const kids = await listChildren(folder.id);
-      for (const k of kids) {
-        if (isDoc(k)) files.push(toFile(k, folder.id));
-        else if (k.folder) nestedFolderCount++;
-      }
-      onProgress?.(++done, folders.length);
+// 소설 폴더 아래 모든 폴더: [{ id, name, parentId, path, depth }] (위에서 아래 순서)
+export function buildTree(allFolders, rootId) {
+  const children = new Map();
+  for (const f of allFolders) {
+    for (const p of f.parents) {
+      if (!children.has(p)) children.set(p, []);
+      children.get(p).push(f);
     }
   }
-  await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+  const out = [];
+  const seen = new Set([rootId]);
+  const walk = (parentId, prefix, depth) => {
+    const kids = (children.get(parentId) ?? []).sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }));
+    for (const k of kids) {
+      if (seen.has(k.id)) continue;
+      seen.add(k.id);
+      const path = prefix ? `${prefix}/${k.name}` : k.name;
+      out.push({ id: k.id, name: k.name, parentId, path, depth });
+      walk(k.id, path, depth + 1);
+    }
+  };
+  walk(rootId, '', 0);
+  return out;
+}
 
-  const result = { rootId, folders, files, nestedFolderCount, scannedAt: new Date().toISOString() };
+export async function loadFolderTree(rootId) {
+  return buildTree(await listAllFolders(), rootId);
+}
+
+// selected: 고른 폴더 ID 목록 (소설 폴더 자신의 ID가 있으면 바로 안의 파일을 미분류 칸에 보인다)
+// onProgress(done, total): total이 null이면 폴더 구조를 받는 중
+export async function scanRoot(rootId, selected, onProgress) {
+  onProgress?.(0, null);
+  const allFolders = await loadFolderTree(rootId);
+  const byId = new Map(allFolders.map((f) => [f.id, f]));
+  // 칸 이름은 소설 폴더 기준 경로 (깊은 폴더도 어디 있는지 알 수 있게)
+  const folders = selected.filter((id) => byId.has(id)).map((id) => ({ id, name: byId.get(id).path, path: byId.get(id).path })).sort(byPath);
+  const includeRoot = selected.includes(rootId);
+  const listed = [...(includeRoot ? [rootId] : []), ...folders.map((f) => f.id)];
+  const listedSet = new Set(listed);
+  onProgress?.(0, listed.length);
+  const items = await listFilesIn(listed, onProgress);
+  const files = [];
+  const seen = new Set();
+  for (const it of items) {
+    if (!isDoc(it) || seen.has(it.id)) continue;
+    const parent = it.parents.find((p) => listedSet.has(p));
+    if (!parent) continue;
+    seen.add(it.id);
+    files.push({
+      id: it.id,
+      name: it.name,
+      size: it.size,
+      modified: it.lastModifiedDateTime,
+      folderId: parent === rootId ? null : parent, // null = 소설 폴더 바로 아래(미분류)
+    });
+  }
+  const result = { rootId, folders, allFolders, files, selected: [...selected], scannedAt: new Date().toISOString() };
   saveCache(result);
   return result;
 }

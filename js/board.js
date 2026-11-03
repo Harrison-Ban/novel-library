@@ -2,7 +2,8 @@
 import { state, render, toast, errorMessage, sheet, writePref } from './state.js';
 import { getLibrary, update } from './library.js';
 import { scanRoot, loadCache } from './scan.js';
-import { downloadFile } from './graph.js';
+import { downloadFile } from './drive.js';
+import { renderFolderSettings } from './folders.js';
 import { moveItems, renameFile, trashFiles, pickFolder } from './fileops.js';
 import { openReader, isReadable } from './reader.js';
 import { convertFiles, isConvertible } from './convert.js';
@@ -26,34 +27,32 @@ export function showBoard() {
   refreshScan();
 }
 
+let rescanAfter = false;
+
 export async function refreshScan() {
-  if (state.scanning) return;
+  // 확인 중에 폴더 설정이 바뀌면 끝난 뒤 한 번 더 확인한다
+  if (state.scanning) {
+    rescanAfter = true;
+    return;
+  }
   state.scanning = true;
   state.progress = null;
   updateStatus();
   try {
-    state.scan = await scanRoot(state.root.id, (done, total) => {
+    state.scan = await scanRoot(state.root.id, getLibrary().selectedFolders ?? [], (done, total) => {
       state.progress = { done, total };
       updateStatus();
     });
-    forgetMissingFiles(state.scan);
   } catch (e) {
     toast(`목록을 새로 불러오지 못했습니다: ${errorMessage(e)}`);
   } finally {
     state.scanning = false;
     if (state.view === 'board') renderBoard();
   }
-}
-
-// OneDrive에서 사라진 파일의 분류 정보를 정리한다.
-// 한꺼번에 절반 넘게 사라졌다면 루트 폴더를 바꾼 경우일 수 있어 지우지 않는다.
-function forgetMissingFiles(scan) {
-  const lib = getLibrary();
-  if (lib.rootFolderId !== scan.rootId) return;
-  const present = new Set(scan.files.map((f) => f.id));
-  const known = Object.keys(lib.files);
-  const missing = known.filter((id) => !present.has(id));
-  if (missing.length && missing.length <= Math.max(5, known.length / 2)) update(ops.forgetFiles(missing));
+  if (rescanAfter) {
+    rescanAfter = false;
+    refreshScan();
+  }
 }
 
 // 오늘이면 시각만, 아니면 날짜와 시각
@@ -68,9 +67,9 @@ function updateStatus() {
   const el = document.getElementById('scan-status');
   if (!el) return;
   el.textContent = state.scanning
-    ? state.progress
-      ? `폴더 확인 중 ${state.progress.done}/${state.progress.total}`
-      : '목록 확인 중…'
+    ? state.progress?.total
+      ? `파일 확인 중 ${state.progress.done}/${state.progress.total}`
+      : '폴더 확인 중…'
     : state.scan
       ? `${shortTime(state.scan.scannedAt)} 확인`
       : '';
@@ -163,12 +162,16 @@ export function renderBoard() {
     ),
     state.showFilters && filterPanel(lib, group),
     group?.type === 'folder' &&
-      h('p', { class: 'muted small note' }, '폴더 연결 그룹: 칸을 옮기면 OneDrive에서 실제 파일이 그 폴더로 이동합니다 (확인 후 실행).'),
+      h('p', { class: 'muted small note' }, '폴더 연결 그룹: 칸을 옮기면 Google Drive에서 실제 파일이 그 폴더로 이동합니다 (확인 후 실행).'),
+    !(lib.selectedFolders ?? []).length &&
+      h('p', { class: 'note' }, '아직 서재에 올린 폴더가 없습니다. ',
+        h('button', { type: 'button', class: 'primary', onclick: () => renderFolderSettings() }, '📁 폴더 설정에서 고르기')),
     h('div', { class: 'summary-row' },
       h('span', { class: 'summary-root' }, state.root.name),
       h('span', { class: 'summary', id: 'summary' }),
       h('span', { class: 'muted small', id: 'scan-status' }),
       h('button', { type: 'button', class: 'link toggle-all', id: 'toggle-all' }),
+      h('button', { type: 'button', class: 'link folder-settings-btn', onclick: () => renderFolderSettings() }, '📁 폴더 설정'),
     ),
     ),
     h('div', { class: `recent ${state.density}`, id: 'recent' }),
@@ -527,7 +530,7 @@ async function moveDialog(ids) {
   if (!group) return;
   const columns = [...groupItems(group, state.scan), { key: NONE, name: group.type === 'folder' ? '미분류 (루트)' : '미분류', color: null }];
   const target = await sheet(`${group.name}: ${ids.length}개를 어느 칸으로?`,
-    group.type === 'folder' && h('p', { class: 'muted small' }, '폴더 연결 그룹이라 OneDrive에서 실제 파일이 이동합니다.'), [
+    group.type === 'folder' && h('p', { class: 'muted small' }, '폴더 연결 그룹이라 Google Drive에서 실제 파일이 이동합니다.'), [
     ...columns.map((c) => ({ label: c.name, value: () => c.key })),
     { label: '취소' },
   ]);
@@ -543,7 +546,7 @@ async function moveDialog(ids) {
 
 const TRASH_ITEM = 'i-del'; // 상태 그룹의 '삭제예정'
 
-// 장르(폴더 연결) 칸 키 → 실제 OneDrive 폴더
+// 장르(폴더 연결) 칸 키 → 실제 Google Drive 폴더
 function folderTarget(key) {
   if (key === NONE) return { id: state.root.id, name: `${state.root.name} (루트)` };
   const folder = state.scan.folders.find((f) => f.id === key);
