@@ -1,6 +1,6 @@
 # 소설 서재 (novel-library)
 
-Google Drive(문서 › 소설)의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요구사항은 [PRD.md](PRD.md)와 [docs/VIEWER-PRD.md](docs/VIEWER-PRD.md), 작업 규칙은 [CLAUDE.md](CLAUDE.md), 처음 설정은 [docs/SETUP.md](docs/SETUP.md)를 본다.
+Google Drive(컴퓨터 › 내 컴퓨터 › 소설)의 소설 txt 파일을 분류·정리하는 개인용 웹앱(PWA). 요구사항은 [PRD.md](PRD.md)와 [docs/VIEWER-PRD.md](docs/VIEWER-PRD.md), 작업 규칙은 [CLAUDE.md](CLAUDE.md), 처음 설정은 [docs/SETUP.md](docs/SETUP.md)를 본다.
 
 - 서버 없는 정적 웹앱, 빌드 과정 없음
 - `main` 브랜치에 푸시하면 GitHub Actions가 GitHub Pages로 배포한다
@@ -25,7 +25,7 @@ python3 -m http.server 8080
 | 파일 | 역할 |
 |---|---|
 | `index.html`, `css/app.css` | 화면 |
-| `js/config.js` | Google 클라이언트 ID, 권한, 고정 소설 폴더 이름(문서/소설) |
+| `js/config.js` | Google 클라이언트 ID, 권한, 고정 소설 폴더 이름(컴퓨터 › 내 컴퓨터 › 소설) |
 | `js/auth.js` | Google 로그인(GIS 토큰 방식), 만료 시 '다시 연결' |
 | `js/drive.js` | Google Drive API 호출, 재시도, 같은 이름 확인, 앱 전용 공간 |
 | `js/folders.js` | 폴더 설정: 소설 폴더 아래 폴더 트리, 올릴 폴더 고르기 |

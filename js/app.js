@@ -70,17 +70,25 @@ function setRoot(root) {
   writePref(ROOT_CACHE_KEY, JSON.stringify(root));
 }
 
-// 고정된 소설 폴더: '문서' 폴더 안의 '소설' 폴더 (내 드라이브든 PC 백업 폴더든 찾는다)
+// 고정된 소설 폴더. PC의 '문서\소설'을 Google Drive 데스크톱 앱으로 동기화한 폴더라서
+// Drive에서는 '컴퓨터 › (PC 이름) › 소설'에 있다. 그 자리를 먼저 찾고, 없으면 '문서' 안의 '소설'을 찾는다.
 async function findNovelRoot() {
+  const myDriveId = (await getItem('root')).id;
+  let inDocuments = null;
   for (const folder of await findFoldersNamed(CONFIG.rootName)) {
     for (const parentId of folder.parents) {
       const parent = await getItem(parentId).catch(() => null);
-      if (parent && !parent.trashed && CONFIG.rootParentNames.includes(parent.name)) {
-        return { id: folder.id, name: folder.name, path: `${parent.name}/${folder.name}` };
+      if (!parent || parent.trashed) continue;
+      // '컴퓨터' 아래 PC 폴더는 더 위의 폴더가 없다 (내 드라이브 최상위와는 다르다)
+      if (!parent.parents.length && parent.id !== myDriveId) {
+        return { id: folder.id, name: folder.name, path: `컴퓨터/${parent.name}/${folder.name}`, top: { id: parent.id, name: parent.name } };
+      }
+      if (!inDocuments && CONFIG.rootParentNames.includes(parent.name)) {
+        inDocuments = { id: folder.id, name: folder.name, path: `${parent.name}/${folder.name}`, top: { id: 'root', name: '내 드라이브' } };
       }
     }
   }
-  return null;
+  return inDocuments;
 }
 
 // 저장본이 있으면 서재를 바로 보여주고, 최신 설정과 폴더 정보는 뒤에서 받아 반영한다
@@ -136,8 +144,8 @@ function renderNoRoot() {
   render(
     h('section', { class: 'panel' },
       h('h2', {}, '소설 폴더를 찾지 못했습니다'),
-      h('p', {}, `Google Drive에서 '${CONFIG.rootParentNames[0]}' 폴더 안의 '${CONFIG.rootName}' 폴더를 찾지 못했습니다.`),
-      h('p', { class: 'muted' }, `Google Drive에 '${CONFIG.rootParentNames[0]} › ${CONFIG.rootName}' 폴더가 있는지, 휴지통에 있지 않은지 확인한 뒤 다시 시도해 주세요. PC의 문서 폴더를 Google Drive로 백업했다면 백업(동기화)이 끝난 뒤에 보입니다.`),
+      h('p', {}, `Google Drive에서 '컴퓨터 › 내 컴퓨터 › ${CONFIG.rootName}' 폴더를 찾지 못했습니다.`),
+      h('p', { class: 'muted' }, `Google Drive 웹의 왼쪽 '컴퓨터' 메뉴에 '${CONFIG.rootName}' 폴더가 보이는지, 휴지통에 있지 않은지 확인한 뒤 다시 시도해 주세요. PC에서 막 동기화를 시작했다면 업로드가 끝난 뒤에 보입니다.`),
       h('div', { class: 'row' }, h('button', { class: 'primary', onclick: openLibraryFresh }, '다시 찾기')),
     ),
   );

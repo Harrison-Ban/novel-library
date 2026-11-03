@@ -336,7 +336,7 @@ export async function removeFolder(folder) {
 
 export function pickFolder(title) {
   return new Promise((resolve) => {
-    let stack = [{ id: 'root', name: '내 드라이브' }, { id: state.root.id, name: state.root.name }];
+    let stack = [state.root.top ?? { id: 'root', name: '내 드라이브' }, { id: state.root.id, name: state.root.name }];
     let result = null;
     const body = h('div', { class: 'picker-body' });
     const chooseBtn = h('button', { type: 'button', class: 'primary', onclick: () => {
@@ -365,8 +365,9 @@ export function pickFolder(title) {
         body.replaceChildren(h('p', {}, errorMessage(e)));
         return;
       }
-      chooseBtn.disabled = cur.id === 'root';
-      chooseBtn.textContent = cur.id === 'root' ? '폴더를 고르세요' : `'${cur.name}'(으)로`;
+      const atTop = stack.length === 1;
+      chooseBtn.disabled = atTop;
+      chooseBtn.textContent = atTop ? '폴더를 고르세요' : `'${cur.name}'(으)로`;
       body.replaceChildren(
         h('nav', { class: 'crumbs' }, ...stack.flatMap((s, i) => {
           const node = i === stack.length - 1
